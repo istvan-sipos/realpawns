@@ -18,7 +18,8 @@ it. Both files sit in this skill directory:
     $SKILL/ddsave          # wrapper (tracked)
     $SKILL/ddsavetool.exe  # third-party binary (git-ignored; the user supplies it)
 
-The live save is the **GOG Galaxy** one (PC format, 524288 bytes):
+The live save is in the GOG build's save folder (PC format, 524288 bytes;
+the path contains "Galaxy", but the Galaxy client isn't installed, so nothing syncs it):
 
     SAVEDIR="/home/istvan/.wine/drive_c/users/istvan/AppData/Local/GOG.com/Galaxy/Applications/49987265717041704/Storage/Shared/Files"
     $SAVEDIR/DDDA.sav           # active save
@@ -26,7 +27,7 @@ The live save is the **GOG Galaxy** one (PC format, 524288 bytes):
 
 ## Never work on the live save in place
 
-That folder is synced by Galaxy, and `unpack` writes `<save>.xml` next to its
+That folder is the live save, and `unpack` writes `<save>.xml` next to its
 input. For research, **copy the save into the session scratchpad first** and
 work on the copy:
 

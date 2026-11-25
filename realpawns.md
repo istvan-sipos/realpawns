@@ -81,8 +81,9 @@ next load.
 
 ### Coexistence with pawnlib-offline
 
-Both mods detour the same rift functions. With pawnitems-style signature
-checks, whichever loads second refuses to patch and logs it. Chaining them
+Both mods detour the same rift functions (`0x00792610`, and the save
+write `0x004B7830`). With pawnitems-style signature checks, whichever
+loads second refuses to patch and logs it. Chaining them
 later is possible: realpawns only acts on `0x10`/`0x20` keys, and pawnlib uses
 `0x11`.
 
@@ -191,6 +192,156 @@ There is no `romNoraPawn.arc`. Everything is inside
 
 All VAs are **GOG DDDA.exe** (image base 0x00400000), same build pawnitems
 targets (pawnitems' give signature at 0x00461172 matches the Ghidra project).
+
+## Implementation (v0.1.0, 2026-11-24)
+
+Built: persistence plus Discipline for support pawns. Not built yet:
+skill-learning tabs for slots 2/3, vocation change.
+
+| file | role |
+|---|---|
+| `src/realpawns.c` | DllMain, ini (`[features] persist`, `discipline`), log |
+| `src/patch.c/.h` | pawnitems' signature-checked patcher + `patch_detour` (trampoline) |
+| `src/savehook.c` | save-write detour `0x004B7830` (7-byte MOVZX steal, from pawnhook) |
+| `src/pawnxml.c/.h` | strict parse of a `cSAVE_DATA_CMC` block; finds `mCmc[1]`/`mCmc[2]` |
+| `src/store.c/.h` | `realpawns\<KEY>.xml` files (verbatim cmc block), loaded at start |
+| `src/rift.c/.h` | post-call detours `0x00792510` / `0x00792610` / `0x007927C0` + record overlay |
+| `src/discipline.c/.h` | patches A/B/C below |
+| `src/game.h` | pBase, party slot, record region constants |
+
+Capture: on each successful DDDA.sav write, inflate, take `mCmc[1]`/`mCmc[2]`
+(party slots 2/3), keep slots that are alive in memory (`param+4`) and whose
+`mRomPawnUniqueID` is `0x10……` or `0x2…….`, write the block verbatim to
+`realpawns\%08X.xml`, update the in-memory copy, re-overlay the pool.
+
+Overlay (`rift.c apply`): only when `rec+0x5C` level equals the stored level.
+Writes job, jobLevel, jobExp, jobNext, jobPoint, weaponSkill, ability,
+skillLv1/2, abilityInfo, the 3 gameplay members of each equip item, and the
+knowledge block. **mStudyData offsets confirmed** from the record property
+table `FUN_007855a0`: EncountFrame f32[72] `+0xB8C`, KillCnt u32[72]
+`+0xCAC`, UniqueCnt u8[116] `+0xDCC` (mStudyFlag `+0x684`, mLocalStudyFlag
+`+0xE40` registered by the same function).
+
+Discipline patches (`discipline.c`):
+
+- A `0x004431FA` (slot 2/3 case of FUN_00442f20, `FMUL [0x014CC42C]`):
+  JMP to a shim that parks ST0, calls `FUN_00780380(EDI=param, xp=EBP)`,
+  restores ST0, redoes the FMUL and resumes at `0x00443200` (the 10%
+  OnlinePoint banking still happens).
+- B `0x007803B5`: the `+0x7F4 == 1` JNZ is NOPed.
+- C `0x0078040B` (`ADD [EDI+0x2C4],ECX`): skipped when `param+0x008`
+  (party slot) >= 2. Support pawns get DP + jobExp, never XP.
+
+Offline checks done: parser against both decoded saves (Wynne `10B302C4`
+parsed; pawnlib's `0x11…` pawn rejected); capture → file → reload under wine
+with the game-memory check stubbed (`-DRP_TEST_NO_GAME`).
+
+**pawnlib-offline must not be loaded** (the live `dinput8.ini` has
+`addons=pawnlib.dll;pawnitems.dll`): it already detours `0x00792610` and
+`0x004B7830`, so those two signature checks fail and persistence is only
+half installed. The log says which hooks failed.
+
+In-game results (2026-11-24, v0.1.0): gear persisted across release and
+re-find. Discipline works: Wynne 0 → 2731 DP and Dominic (`10010156`,
+level 1) 0 → 1691 DP with Fighter rank 1 → 3, with XP, level and base stats
+unchanged.
+
+### Skill tabs (v0.2.0, `src/skilltabs.c`)
+
+The tab-list setup of `uGUISkillLearn` init `FUN_006f8fd0`
+(`0x006F906F..0x006F9095`: values `{0,1}`, count 1/2 via
+`FUN_0077da70(EAX=main pawn param)`) is replaced by a JMP to a shim. The
+shim fills the 4-int local `[ESP+0x10]` with every present slot (Arisen
+first), sets EDI = count, and resumes at `0x006F9095`
+(`FUN_004e7fc0(gui, count, values)`). "Present" is `FUN_0077da70`'s test:
+`param+4` alive, `param+0x354 == 0`, and an actor in the party table
+`*0x018DB4CC + 0x99C` (Arisen) / `+0x9A0 + (slot-1)*4`. The tab callback
+`FUN_006ffc70` is generic: `gui+0x270 = value`, redraw, and the label is
+taken from the slot value. ini: `[features] skill_tabs`.
+
+Still to check in-game: the tab labels for slots 2/3, learning a skill
+(DP spent from the support pawn), setting skills, and that the pawn uses
+them after the menu closes (`FUN_00512460` refreshes flagged slots 0..3).
+
+In-game result (v0.2.0): the tabs, learning and setting skills all work for
+support pawns. Problem found: Dominic had no Blink Strike, so Burst Strike was
+never offered.
+
+### Innate skills (v0.3.0, `src/innate.c`)
+
+Skill table `0x014D4C30`, 0x20 bytes per id (bound 0x1AE): +0x00 vocation
+mask (bit 1<<job), +0x04 weapon bits, +0x08 type (1 = innate, 2 = learnable
+core), +0x14 cost row index (12-byte rows at `0x01501820`; the
+purchase fields are -1 for innate rows). There are 19 innate skills with
+vocation mask 0: 30–32 (sword/mace), 90–92 (greatsword/hammer), 140–143
+(dagger), 200–202 (staves), 260 (shield), 300 (magick shield), 340/341/390
+(bows). The Arisen (all vocations) has all 19. Ada (Fighter + Warrior) has
+exactly the sword, greatsword and shield ones. Rift synthesis gives none.
+
+The learn list's innate loop (`FUN_006f7c40`, `0x006F7CE0`) only lists
+innate skills learned at grade 1 (`FUN_0077e310(EDI=param+0x72C) == 1`),
+as upgrade entries; unlearned ones are skipped, so they can never be bought.
+
+Learned bits, live party param: `param+0x730` grade 1, `+0x768` grade 2
+(`FUN_0077e310` tests `[param+0x72C+4/+0x3C/+0x74 + (id>>5)*4]`). Learn action
+at `0x006FA5AE..0x006FA618` (`FUN_0077e400` sets the bit, then
+`SUB [param+0x344], cost`).
+
+Fix: grant all 19 (vocation ignored, so a later vocation change needs no
+revisit) by ORing them into grade-1 bits:
+
+- every official rift record (`rec+0x160`), stored or not, in the same three
+  hooks as the overlay;
+- live slots 2/3 (`param+0x730`) when the learn screen opens and after each
+  save (covers pawns hired before the fix).
+
+ini: `[features] innate_skills`.
+
+**v0.3.0 result: wrong skills.** The 18 innate bits landed (the save
+confirmed it), but innate skills are basic moves. Cost-row field +0 is a
+message index into the skill-name list in `message/message.pck` ("Onslaught",
+"Dire Onslaught", … "Blink Strike" = 7): 30 = Dire Onslaught, 31 =
+Takedown, 32 = Controlled Fall; **40 = Blink Strike** (type 2), 41 = Broad
+Cut, 45 = Skyward Lash, 46 = Flesh Skewer.
+
+**Vocation starting skills (v0.3.1).** On a vocation change `FUN_00672f60`
+walks the per-vocation weapon-key list `0x0185678C[job]` (Fighter = {1 sword,
+8 shield}) against the 12-row table `0x01563548` {u32 weapon key, s32 skill,
+u8 slot} and, for each skill with `FUN_0077e310 == 0`, calls `FUN_00673020`,
+which learns it (`FUN_0077e400`) and equips it. Table: sword 40, greatsword 104,
+dagger 152, staff 210+220, archistaff 210+234, shield 272, magick shield
+310, bow 350, longbow 402, magick bow 359 (job 4/6 skip 220). Ada has 40, 104 and 272,
+and the Arisen has the rest, which confirms this. Rift pawns never pass through it.
+
+**Correction (user):** type 1 is not "innate". Those are DP-bought *core
+skills* (e.g. Dire Onslaught, an enhancement of the basic Onslaught combo).
+v0.3.0/v0.3.1 wrongly granted all 18 of them; v0.3.2 grants only the
+starting skills. Cleanup of the wrongly granted bits: remove the 18 type-1 ids from
+mSkillLv1, except the ones a pawn had before (both party copies in the save,
+plus the store file).
+
+v0.3.1 granted innate skills plus these 11 starting skills to every official pawn
+(the grade-1 bit, only if not known at any grade: record Lv1/Lv2
+`+0x160/+0x198`; live `param+0x72C` +0x04/+0x3C/+0x74). It doesn't
+auto-equip them like the vanilla path does.
+
+### In-game test plan
+
+1. `make`, then copy `realpawns.dll` and `src/realpawns.ini` next to
+   DDDA.exe (`make deploy deploy-ini`). In `dinput8.ini` set
+   `addons=pawnitems.dll;realpawns.dll` (pawnlib removed).
+2. Start, check `realpawns.log`: `persist: ready`, `discipline: ready`.
+3. With Wynne hired, kill a few enemies, check her Discipline goes up and
+   her level/XP don't. Rest/save → log shows `capture: slot 3: 'Wynne'
+   10B302C4 ... saved`, and `realpawns\10B302C4.xml` exists.
+4. Change her gear, save, dismiss her, find her again in the rift (level
+   179 search, or favorites/history) → log line `search:`/`dispatch:`/`pool:
+   10B302C4 'Wynne' ... restored`, and the preview shows the new gear.
+5. Rehire → gear, DP, ranks and bestiary match what she left with.
+
+Watch for: a `record level != stored level` log line (would mean the
+key/level assumption is off), and whether skill filters in the search
+pick up the restored skills.
 
 ## Shared layout
 

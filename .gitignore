@@ -1,0 +1,5 @@
+*.log
+*.res.o
+build/
+realpawns.dll
+.claude/settings.local.json
