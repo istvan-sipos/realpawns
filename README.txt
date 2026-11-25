@@ -5,25 +5,34 @@ A rift pawn progression mod for Dragon's Dogma: Dark Arisen.
 
 Pawns you hire from the rift normally stay as they were made: they earn
 no Discipline, you can't teach them skills, and whatever you change on
-them is gone the next time you hire them. realpawns lets the official
-offline pawns grow while they travel with you and remember it, without
-changing their level.
+them is gone the next time you hire them. realpawns turns every official
+offline pawn you hire into your own copy of that pawn, which grows while
+it travels with you, levels up, and remembers all of it.
 
 
 FEATURES
 --------
 
-- Pawns remember. Each time the game saves, the gear, learned and
-  equipped skills, augments, vocation ranks, Discipline, inclination and
-  bestiary knowledge of your hired pawns are stored. The next time the same pawn
-  turns up, in the level search, your favorites, your history or the
-  rift's own selection, it has all of that again. That holds in a new
+- Hired pawns become yours. Hiring an official rift pawn makes a clone
+  of it with its own rift id. The original stays in the rift exactly as
+  it was, so others can still find it, and you can even hire it again
+  (which makes another clone).
+- Clones remember. Each time the game saves, a hired clone's level, XP,
+  stats, gear, learned and equipped skills, augments, vocation ranks,
+  Discipline, inclination and bestiary knowledge are stored. When you
+  meet it again, in the level search, your favorites, your history or
+  the rift's own selection, it has all of that. That holds in a new
   playthrough too, and across save files.
-- What you see is what you hire. The stored progress is applied when the
+- Clones level up. Hired clones gain XP the way your main pawn does:
+  quickly while they are behind you, slowly or not at all once they are
+  far ahead. Their stats grow with their current vocation, as the main
+  pawn's do.
+- Found at their own level. Searching the rift by level lists your
+  clones saved at that level first; the rest of the list is the usual
+  rift pawns. A clone that has levelled up turns up under its new level.
+- What you see is what you hire. Stored progress is applied when the
   rift builds its pawn list, so the preview, searching by skills, the
   hire cost and the pawn you hire all agree.
-- Levels never change. A pawn you found at level 20 stays level 20, with
-  level-20 stats. Support pawns gain no XP; only their vocation grows.
 - Discipline for support pawns. Hired pawns earn Discipline and vocation
   rank from kills, just like your main pawn.
 - Skill lessons for support pawns. The inn's skill screen gets tabs for
@@ -91,14 +100,16 @@ INSTALLATION
    the top it should say:
 
        persist: ready
-       discipline: ready
+       discipline: ready, leveling on
        skill tabs: ready
        vocation change: ready (marker item 1529, kept)
        inclination elixirs: ready
 
    A realpawns folder is created next to the DLL. It holds one file per
-   pawn you have hired (named after the pawn's rift id). Keep it if you
-   reinstall; deleting a file makes that pawn forget its progress.
+   clone (named after its rift id, 12000001.xml and up) and
+   next_id.txt, the next clone number. Keep it if you reinstall.
+   Deleting a clone's file removes that clone: it no longer shows up in
+   the rift, and its favorites entry can't be summoned.
 
 
 CONFIGURATION
@@ -112,8 +123,9 @@ set it to 0 to turn that feature off.
                            ; or append
 
     [features]
-    persist = 1            ; hired pawns keep their progress
-    discipline = 1         ; support pawns earn Discipline, no XP
+    persist = 1            ; hired pawns become clones that keep progress
+    discipline = 1         ; support pawns earn Discipline
+    leveling = 1           ; clones also gain XP and level up
     skill_tabs = 1         ; inn skill screen has tabs for them
     innate_skills = 1      ; rift pawns know the vocation starting skills
     vocation_change = 1    ; support pawns can change vocation
@@ -127,12 +139,22 @@ set it to 0 to turn that feature off.
 NOTES
 -----
 
-- Progress is stored when the game saves. A pawn you dismiss before the
-  next save forgets what it learned since the last one.
-- Only official rift pawns are stored. Pawns from other mods (such as
-  pawnlib-offline's archive) are left alone.
-- The same rift pawn found at a different level is a different pawn to
-  the game, so it has its own progress.
+- Progress is stored when the game saves. A clone you dismiss before
+  the next save forgets what it learned since the last one; one you
+  hire and dismiss before any save is never stored at all.
+- Only official rift pawns are cloned. Story pawns stay as the game made
+  them (no XP, nothing stored), and pawns from other mods (such as
+  pawnlib-offline's archive) are left alone. Neither gains levels.
+- Up to 65,535 clones. Numbers are never reused, even after a clone's
+  file is deleted.
+- Without realpawns the game can't build a clone, so clones in your
+  favorites or history simply don't show up. A clone in your party stays
+  as it is: the save holds all of it.
+- Upgrading from realpawns 1.2 or older: the old files in the
+  realpawns folder (named 10xxxxxx.xml / 2xxxxxxx.xml) are no longer
+  used and can be deleted. A rift pawn already in your party becomes
+  a clone at the next save; save once more afterwards so the save file
+  carries its new id too.
 - Vocation change: the first support pawn that is present (not dead or
   away) and carries the marker item is picked, slot 2 before slot 3. While
   one carries it, the vocation screen shows that pawn instead of your main
@@ -169,9 +191,9 @@ Source layout:
     src/patch.c       signature-checked code patching helpers
     src/savehook.c    save-write hook (captures hired pawns)
     src/pawnxml.c     reads a pawn's progress from the save data
-    src/store.c       the realpawns\ folder: one file per pawn
-    src/rift.c        applies stored progress to rift pawns
-    src/discipline.c  Discipline without XP for support pawns
+    src/store.c       the realpawns\ folder: one file per clone
+    src/rift.c        clones: made on hire, rebuilt in rift lists
+    src/discipline.c  Discipline for support pawns, XP for clones
     src/skilltabs.c   support pawn tabs on the inn skill screen
     src/innate.c      vocation starting skills
     src/vocation.c    vocation change for support pawns

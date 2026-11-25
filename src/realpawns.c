@@ -54,6 +54,7 @@ static void read_config(void)
                              sizeof g_log_mode, ini);
     g_persist    = GetPrivateProfileIntA("features", "persist", 1, ini) != 0;
     g_discipline = GetPrivateProfileIntA("features", "discipline", 1, ini) != 0;
+    rp_level_up  = GetPrivateProfileIntA("features", "leveling", 1, ini) != 0;
     g_skill_tabs = GetPrivateProfileIntA("features", "skill_tabs", 1, ini) != 0;
     g_innate     = GetPrivateProfileIntA("features", "innate_skills", 1, ini) != 0;
     g_vocation   = GetPrivateProfileIntA("features", "vocation_change", 1, ini) != 0;
@@ -106,9 +107,12 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID reserved)
             patch_logf("persist: disabled in realpawns.ini");
         }
 
+        /* only clones level up, through the Discipline patches */
+        if (!g_persist || !g_discipline) rp_level_up = 0;
         if (g_discipline)
-            patch_logf("discipline: %s", discipline_install() ? "ready" :
-                       "NOT installed (see above)");
+            patch_logf("discipline: %s, leveling %s",
+                       discipline_install() ? "ready" : "NOT installed (see above)",
+                       rp_level_up ? "on" : "off");
         else
             patch_logf("discipline: disabled in realpawns.ini");
 

@@ -666,3 +666,126 @@ copies record `+0x1348` into param `+0x14BC`.
   `mInfo[ INFO_TYPE_* ]`; rift overlay writes record `+0x1348`. Capture log
   lists the active inclinations. The existing store files already hold
   mInfo (parser checked natively against all three).
+
+## Pawn leveling via clones (design + research, 2026-11-25)
+
+### Design (agreed with the user)
+
+- Hiring an official rift pawn (`0x10LLIIII`) creates a **clone** with its own
+  key `0x1200nnnn` (running id from a persisted counter, never reused). The
+  vanilla pawn stays pristine and can coexist with any number of clones of it.
+- Each clone has one store file holding the full captured block plus its
+  origin (vanilla key → bank + template index). Clones level up; level, exp,
+  nextExp and base stats are persisted.
+- Search by level L: the store folder is scanned on **every** search; clones
+  whose saved level is L are listed first, the rest is filled with vanilla
+  pawns. Clones in the party stay listed (the game marks them itself).
+- Missing file → the clone just isn't listed; favorites can't resolve it.
+- Story pawns (`0x20…`) are **not** persisted any more (vanilla, Discipline
+  only). Existing `0x10…`/`0x20…` store files are deleted by the user.
+- Support-pawn XP follows the main pawn's formula.
+
+### Research results
+
+**Template identity.** `FUN_00792510` (search, EAX = level): bank =
+bracket index of the level in `DAT_014eb954` (33 banks at `mgr+0x0C+bank*4`),
+index = `rand % bank->count (+0x64)`, template = `bank->list(+0x70)[index]`,
+then `FUN_00792c10(mgr, out, template, level)` and the key stamp. So
+(bank, index) is the person; any template can be synthesized at any level by
+calling `FUN_00792c10` directly. Clone origin = its vanilla key at hire (bank
+from LL via the bracket table).
+
+**Search builder** `FUN_0047a260(builder, list, items)`, called from the rift
+UI `FUN_00739800`. Mode `builder+0x154C` (1 = search by level, 9/0xD,
+10/0xE, 0xB/0xF = key lists dispatched through `FUN_00792610`). Mode 1: 100
+listings, each `FUN_00792510(builder+0x1574, rec; EAX = [builder+0x1528])`
+→ **query level = builder+0x1528**. Duplicate keys (vs. items already listed)
+are re-rolled up to 100 times. Each record is converted to a 0x1660 param by
+`FUN_00446e90` (record+0x13E4 block → param+0x1550, so **param key =
++0x15E4**). Item flags: 0x1000 when param level (`+0x700`) == 0 (and such
+items are dropped in modes 0xD/0xE/0xF), 0x800 when `FUN_00739780` finds the
+key in another list.
+→ Injection: arm on `FUN_0047a260` entry when mode == 1 (scan the folder,
+queue clones with level == `[builder+0x1528]`), serve the queue from the
+`FUN_00792510` wrapper (synthesize origin template at L, overlay, stamp clone
+key), disarm on return. `FUN_0047baf0` (other builder in `FUN_0047b7d0`,
+also calls `FUN_00792510`) skips keys already in the party.
+
+**In-party check** `FUN_00447800` (ESI = pBase, EAX = rec+0x13E4): compares
+key `+0x94` (= rec+0x1478) with slot 2/3 param `+0x15E4`
+(`pBase+0xAAB04` / `+0xAC164`), alive flags `+0xA9524` / `+0xAAB84`.
+Key-based → clones in the party match their listed copy.
+
+**Dispatch of an unknown `0x12…` key** (`FUN_00792610`): top nibble 1 →
+level = `(key>>16)&0xFF` (>200 → 0), bank by bracket, index clamped to 0 if
+out of range, synthesize. With `0x1200nnnn` the result is a harmless
+**level-0** record (synthesis loop skipped for level ≤ 1), which the list
+flags 0x1000 and drops from the offline key lists. So the id must keep bits
+16..23 zero (or > 200): 65,535 ids. pawnlib's `0x11…` keys rely on the same.
+
+**Hire.** `FUN_0043e0c0(mgr, idx, ?, rec, flag)` (callers: `FUN_0043fca0`,
+rift UI `FUN_0073a1d0`, `FUN_00b99e00`): if party slot `idx` (0 = main pawn,
+1/2 = slots 2/3, param = `pBase+0xA7EC0+idx*0x1660`) is free, calls
+`FUN_00446d40(rec → slot)` (copies record+0x13E4 → param+0x1550 incl. the
+key), bumps a hire counter (`FUN_0044aec0`, `pBase+0xB8878`) and marks the
+slot alive. Reverse copy slot → record: `FUN_004474b0` (used on dismissal
+by `FUN_00447f70`, which files the pawn into the 0x9E470 record list).
+→ Clone hook: pre-call on `FUN_0043e0c0` (flag == 0, idx 1/2, rec key
+`0x10…`): stamp the new clone key into rec+0x1478 so everything after the
+copy already sees it; commit the counter only when the call returns 1.
+
+**Synthesized stats** (record, f32): `0x1E0` mHp, `0x1E4` mHpMax, `0x1E8`
+mHpMaxWhite, `0x1EC` mStamina, `0x1F0` mStaminaBase, `0x1F4` mStaminaLv,
+`0x1F8` mBasicAttack, `0x1FC` mBasicDefend, `0x200` mBasicMgcAttack, `0x204`
+mBasicMgcDefend; `0x208` mExp, `0x20C` mNextExp (synthesis leaves both 0;
+the hired Wynne had exp 0 / nextExp 416700). Party param: `+0x2A0` HP max
+(cap 9999), `+0x2B0` stamina, `+0x2B4..+0x2C0` atk/def/matk/mdef, `+0x2C4`
+exp (within the level), `+0x2C8` nextExp, `+0x700` level.
+
+**XP.** Exp is per level: total = `FUN_00b597b0(level)` + `exp`. In
+`FUN_00442f20`, slot 0 computes the Arisen's total; slot 1 (main pawn) gets
+`xp + (ArisenTotal − PawnTotal) × f × 0.01`, clamped ≥ 0, where `f` =
+`(*(pBase+0xB8754))->vtbl[0x3C](0)`. A pawn ahead of the Arisen gets less,
+down to 0. Slots 2/3 only bank 10% into `+0x34C`. Discipline patch A already
+calls `FUN_00780380` for 2/3 and patch C skips the exp add; for clones, use
+the slot-1 formula and let the exp add through.
+
+**Level-up** `FUN_00b59380(actor, fx, force)`: generic (stats from the
+vocation table, nextExp = `FUN_00b596e0(level)`, cap 200). Skipped for
+pawn actors (`+0x206D & 4`) while `actor+0x273C & 0x8000` — looks like a
+transient state flag (the main pawn levels through the same check). Verify
+in-game that slots 2/3 level.
+
+#### Implementation (1.3.0)
+
+- `pawnxml`: `rp_key_vanilla` / `rp_key_story` / `rp_key_clone`
+  (`0x1200nnnn`, n = 1..65535); the parse also requires mExp, mNextExp and
+  the ten stats (record `+0x1E0` order: mHp, mHpMax, mHpMaxWhite, mStamina,
+  mStaminaBase, mStaminaLv, mBasicAttack, mBasicDefend, mBasicMgcAttack,
+  mBasicMgcDefend).
+- `store`: files `realpawns\1200nnnn.xml` = header line
+  `<!-- realpawns clone of 10LLIIII -->` + the CMC block. The cache resyncs
+  with the folder (mtime + size) in `store_rescan`; deleted files drop
+  out, other key families are ignored. `next_id.txt` = next number, never
+  below the highest file + 1. Hires not yet saved keep their origin in a
+  small pending table. Capture: clone → write; vanilla key in the party
+  (hired before 1.3.0) → new clone number, live param `+0x15E4` rekeyed,
+  block text rekeyed, written; anything else skipped.
+- `rift`: detours on `FUN_0047a260` (rescan; mode 1 queues the clones at
+  `[builder+0x1528]`, clamped 1..200, newest first), `FUN_00792510` (post:
+  next queued clone), `FUN_00792610` (post: clone key → build; a missing
+  file leaves the game's level-0 record), `FUN_007927c0` (post: overlay
+  clones in the region without rebuilding, innate grant), and
+  `FUN_0043e0c0` (pre: flag 0, idx 1/2, free slot, vanilla rec key → stamp
+  a new clone key into rec+0x1478; post: restore on failure). Build =
+  `FUN_00792c10(mgr, rec, template(origin), level)` + overlay (level,
+  stats, exp, nextExp, everything from 1.2) + key. Signature checks also
+  on the synthesizer prologue and the bracket table.
+- `discipline`: patch A's shim calls `support_xp(param, xp, [ESP+0x18])`,
+  which for clones (and `leveling = 1`) returns the slot-1 catch-up
+  amount; patch C lets the exp add through for clone keys.
+- ini `[features] leveling` (default 1; forced off without `persist`).
+- Offline checks: parser against the five 1.2 files (stats, exp, nextExp
+  read); store round trip under wine (load with origin, legacy file
+  ignored, counter recovered from files, capture of a crafted save with a
+  clone key, external edit reloaded, deleted file dropped).

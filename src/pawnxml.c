@@ -215,14 +215,6 @@ static int get_equip(xspan prm, struct rp_gear out[RP_EQUIP])
 
 /* ---- public ------------------------------------------------------------- */
 
-int rp_key_supported(uint32_t key)
-{
-    uint32_t fam = key & 0xFF000000u;
-    if (fam == 0x10000000u) return 1;            /* generated: 0x10LLIIII */
-    if ((key & 0xF0000000u) == 0x20000000u) return 1;   /* story pawns  */
-    return 0;
-}
-
 int rp_parse_cmc(const char *xml, size_t len, struct rp_pawn *out)
 {
     memset(out, 0, sizeof *out);
@@ -248,6 +240,16 @@ int rp_parse_cmc(const char *xml, size_t len, struct rp_pawn *out)
 
     if (get_scalar(prm, "mLevel", &v)) return -5;
     out->level = (uint8_t)v;
+    if (get_scalar(prm, "mExp", &v)) return -22;
+    out->exp = (uint32_t)v;
+    if (get_scalar(prm, "mNextExp", &v)) return -23;
+    out->next_exp = (uint32_t)v;
+    static const char *const STAT[RP_STATS] = {
+        "mHp", "mHpMax", "mHpMaxWhite", "mStamina", "mStaminaBase",
+        "mStaminaLv", "mBasicAttack", "mBasicDefend", "mBasicMgcAttack",
+        "mBasicMgcDefend" };
+    for (int i = 0; i < RP_STATS; i++)
+        if (get_scalar_f(prm, STAT[i], &out->stats[i])) return -24;
     if (get_scalar(prm, "mJob", &v)) return -6;
     out->job = (uint8_t)v;
 

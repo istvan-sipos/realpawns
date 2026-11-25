@@ -23,6 +23,7 @@
 #define RP_STUDY_ENEMY 72
 #define RP_STUDY_UNIQ  116
 #define RP_INCL        9      /* inclinations, mInfo[ INFO_TYPE_* ]    */
+#define RP_STATS       10     /* mHp .. mBasicMgcDefend                 */
 
 struct rp_gear {
     int16_t  item_no;         /* -1 = empty */
@@ -33,7 +34,13 @@ struct rp_gear {
 struct rp_pawn {
     uint32_t key;             /* mRomPawnUniqueID */
     char     name[26];        /* for logging only */
-    uint8_t  level;           /* for sanity checks only; never applied */
+    uint8_t  level;           /* mLevel, 1..200 */
+    uint32_t exp;             /* mExp: progress within the level */
+    uint32_t next_exp;        /* mNextExp */
+    /* mHp, mHpMax, mHpMaxWhite, mStamina, mStaminaBase, mStaminaLv,
+     * mBasicAttack, mBasicDefend, mBasicMgcAttack, mBasicMgcDefend:
+     * the record's f32[10] at +0x1E0, in this order */
+    float    stats[RP_STATS];
 
     uint8_t  job;
     uint8_t  job_level[RP_JOBS];
@@ -62,10 +69,21 @@ struct rp_pawn {
     uint32_t incl_status[RP_INCL];  /* 2 dominant, 1 active, 0 inactive */
 };
 
-/* Is `key` an official offline pawn key realpawns handles?
- * 0x10LLIIII (generated) or 0x2xxxxxxx (story).  pawnlib's 0x11xxxxxx
- * family and the 0xFFFFFFFF sentinel are excluded. */
-int rp_key_supported(uint32_t key);
+/* Key families (mRomPawnUniqueID):
+ *   0x10LLIIII  vanilla rift pawn: level LL, template IIII of LL's bank
+ *   0x2xxxxxxx  authored story pawn
+ *   0x1200nnnn  realpawns clone n (1..65535).  Bits 16..23 stay 0 so the
+ *               game, without realpawns, decodes it as a level-0 pawn and
+ *               drops it from its lists.
+ * pawnlib's 0x11xxxxxx family and the 0xFFFFFFFF sentinel are none. */
+#define RP_CLONE_BASE  0x12000000u
+#define RP_CLONE_MAX   0xFFFFu
+static inline int rp_key_vanilla(uint32_t k) { return (k & 0xFF000000u) == 0x10000000u; }
+static inline int rp_key_story(uint32_t k)   { return (k & 0xF0000000u) == 0x20000000u; }
+static inline int rp_key_clone(uint32_t k)
+{
+    return (k & 0xFFFF0000u) == RP_CLONE_BASE && (k & 0xFFFFu) != 0;
+}
 
 /* Parse one cSAVE_DATA_CMC block.  Returns 0 on success, or a negative
  * code naming the first missing piece (see pawnxml.c). */
