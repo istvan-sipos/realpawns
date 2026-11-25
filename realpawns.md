@@ -552,3 +552,117 @@ vanilla) every patch is a no-op unless an elixir pawn was chosen.
 
 Item calls: `FUN_0045f500` (find, ret 8) and `FUN_00458230` (remove, ret 4)
 under the item-manager lock (recursive critical section at `itemMgr+4`).
+
+### Inclination elixirs on any pawn (research, 2026-11-25)
+
+Goal: allow Use on the nine inclination elixirs and the Neutralizing Elixir
+from the main pawn's or a support pawn's inventory, applying the effect to
+that pawn.
+
+**Data.**
+- Save: `mInfo[ INFO_TYPE_* ]` inside each cSAVE_DATA_CMC, 9 × {u32
+  mInfoType, f32 mValue, u32 mStatus}. Order: 0 BELLIGERENT (Scather),
+  1 PRUDENT (Medicant), 2 POOR_AIM (Mitigator), 3 STRATEGY (Challenger),
+  4 TACTICS (Utilitarian), 5 PROTECTION (Guardian), 6 SAME_SUPPORT (Nexus),
+  7 CURIOSITY (Pioneer), 8 GATHER (Acquisitor). mStatus: 2 = dominant,
+  1 = active, 0 = inactive. Also `mInfoEx[TALK, SKILL_USE]` (type + value).
+- Party param (0x1660 block): mInfo at **+0x14BC**, stride 0xC (serializer
+  `FUN_00780d30`). Rift record (0x14E8): mInfo at **+0x1348** (property
+  table `FUN_007855a0`).
+- Save facts: main pawn BELLIGERENT 995 (2) + TACTICS 877 (1); Dominic
+  (10010156) TACTICS 660 (1) + SAME_SUPPORT 700 (1), the rest 0.
+- realpawns does **not** persist or overlay mInfo yet, so an elixir effect
+  on a support pawn would survive only while hired.
+
+**Items.** 1520..1528 = the nine elixirs in the order above
+(`itemNo - 0x5F0` = index); 1529 = Neutralizing Elixir.
+
+**Inclination controller.** `ctrl = *(actor+0x2E64) + 0x88`; `ctrl+4` = the
+AI object X (`X+4` = actor). Bound by `FUN_0057e360` (ESI=ctrl, EAX=X):
+`ctrl+0x10 + i*8` points at `param+0x14BC + i*0xC` (param from
+`actor+0x3DEC` when `actor+0x206D & 4`, else `actor+0x5870`), then
+`FUN_0057f370(1)`.
+- `FUN_0057f370(EAX=ctrl, push refresh)`: no gate. Sorts the 9 values,
+  rewrites every mStatus (top ≥ `DAT_017d51ec` → 2, ≥ 600 → 1, max two
+  active) and rebuilds the active lists `ctrl+0x68/0x74`, `+0x7C/0x88`,
+  `+0x90..0xA0`, `+0xBC..`. This is what the AI reads.
+- Shared gate in every mutator (`FUN_0057ef30`, `FUN_0057e770`,
+  `FUN_0057e520`, `FUN_0057eec0`) and the check `FUN_0057f160`:
+  `ctrl+8 == 0`, `X+0x2AC != 0`, `*(DAT_018db49c+0x30) < 9000`, and
+  **`param+0x7F4 == 1`** (main pawn only). This gate is why support pawns
+  never drift.
+- Apply: `FUN_0057ef30(EAX=ctrl; push itemNo)`. Elixir: `FUN_0057e770`
+  (chosen value → 650, others above 500 lowered via
+  `FUN_0057def0/deb0`), or the "already active" path (`FUN_0057ecb0`,
+  `FUN_0057e520`). Neutralizing (`FUN_0057eec0`): every value →
+  `DAT_018db594` (minimum), `ctrl+0x7C = ctrl+0xBC = 0`. Each ends in
+  `FUN_0057f370`.
+
+**Use flow.**
+- Item submenu draw `FUN_0066a4c0` and confirm `FUN_0066acb0` both call
+  `FUN_00460cb0(EAX=item; push owner)`, with owner =
+  `gui[0x2B0 + gui[0x2A8]*4]` (the inventory tab's party slot). **Any owner
+  ≠ 0 returns 5**: Use is disabled for every item in a pawn's inventory.
+  Return codes: 0 usable, 1 not usable, 2 busy, 3 equip clash, 4 elixir not
+  applicable (message 0x110), 5 not your inventory (message 0xF8).
+- For elixirs, `FUN_00460cb0` → `FUN_00441fa0` → `FUN_00441a00(itemNo)`:
+  main pawn actor (`*0x018DB4CC+0x9A0`), HP > 0, `actor+0x2E64` set, then
+  `FUN_0057f160(EAX=ctrl)`.
+- Use = `FUN_0066b230(this=gui, EAX=item; push owner)`. This is already
+  owner-generic: actor = Arisen (0) or `0x9A0+(owner-1)*4`, then
+  `FUN_00b747f0(actor, item, 1, 0, 0, 0)`. That calls the item effect on
+  the **owner's** actor (vtable +0x2DC = `FUN_00b74e40` for the human
+  classes) and removes one item from the owner's bag
+  (`FUN_0045edf0(EAX=mgr, EDI=owner; itemNo, 1, 0)`).
+- `FUN_00b74e40` (this = actor, item): at `0x00B7504F..0x00B75086`, if
+  itemNo ≥ 0x5F0 and `FUN_00441a00(itemNo)`, it calls
+  `FUN_0057ef30(main pawn ctrl, itemNo)`. **It always targets the main
+  pawn**, whoever is `this`.
+
+**What an implementation needs.**
+1. Menu gate: hook `FUN_00460cb0` entry. If owner is 1..3 and item is
+   1520..1529, return 0 or 4 from our own check on that pawn (present,
+   HP > 0, ctrl bound, quest < 9000). Leave every other case untouched (5).
+2. Effect redirect at `0x00B7504F`: target = `this` when `this` is the
+   actor of party slot 2/3 (and equals the item's owner); otherwise the
+   vanilla main pawn. This handles the item being used from the Arisen's
+   bag (vanilla), from the main pawn's bag (same), and from a support bag.
+   It is also safe if elixirs turn out to be party-wide items applied to
+   every actor.
+3. Gate bypass for support pawns: around the `FUN_0057ef30` call, set
+   `param+0x7F4 = 1` (and clear `ctrl+8` if set), then restore. Outside the
+   call, support pawns stay frozen as in vanilla.
+4. Persistence: add mInfo (and maybe mInfoEx) to `rp_pawn` / pawnxml, and
+   overlay into rift record `+0x1348` so the new inclination survives
+   release and re-hire.
+5. Marker conflict: 1529 is also the vocation-change marker. Using it would
+   neutralize the pawn and consume the marker.
+
+**Still to verify in-game.** For slot 2/3 actors: `param+0x7F4`, `ctrl+8`,
+`X+0x2AC` (log them). Elixir item flags (`*(item+4)+0x38` bits 12..14:
+party-wide = 4; `+0x58` bit 13: held-item/animation path). Whether hiring
+copies record `+0x1348` into param `+0x14BC`.
+
+#### Implementation (1.2.0, `src/inclination.c`)
+
+- M `0x00460CB0` (entry, `CMP [ESP+4],0` → JMP): owner 1..3 and item
+  1520..1529 → `inc_usable` returns 0/1/2/4/5 (held item → 1, no Arisen
+  → 5, item busy → 2, owner 1 → `FUN_00441a00`, owner 2/3 →
+  `support_refusal`). Everything else runs the original code. Each answer
+  is logged once per bag owner and item, with the item flags
+  (`def+0x38`, `def+0x58`).
+- E `0x00B7504F` (10 bytes → JMP, resume `0x00B75086`): `inc_effect(EBX
+  actor, EBP item)`. Owner 2/3: only when `actor` is that slot's actor →
+  `apply_support`. Owner 1: only when `actor` is the main pawn. Otherwise
+  (owner 0) vanilla: `FUN_00441a00` → `FUN_0057ef30(main ctrl)`. Before and
+  after values are logged.
+- `support_refusal`: param alive/not gone, actor, `actor+0x1D0C` > 0,
+  HP > 0, X = `actor+0x2E64`, `ctrl+4 == X`, `X+4 == actor`,
+  `X+0x2AC`, `actor+0x3DEC` == the slot param, `ctrl+0x10` ==
+  `param+0x14BC`, progress < 9000, actor vtable +0x2DC == `FUN_00b74e40`.
+- `apply_support`: `param+0x7F4 = 1`, `ctrl+8 = 0`, `FUN_0057ef30(ctrl,
+  itemNo)`, restore both.
+- Persistence: `rp_pawn.incl_*` (optional, `has_incl`) parsed from
+  `mInfo[ INFO_TYPE_* ]`; rift overlay writes record `+0x1348`. Capture log
+  lists the active inclinations. The existing store files already hold
+  mInfo (parser checked natively against all three).

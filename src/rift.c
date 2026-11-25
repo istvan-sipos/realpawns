@@ -42,6 +42,8 @@
 #define R_KILLCNT      0xCACu   /* u32[72]  mStudyData.KillCnt      */
 #define R_UNIQUECNT    0xDCCu   /* u8[116]  mStudyData.UniqueCnt    */
 #define R_LOCALSTUDY   0xE40u   /* u32[322]                   */
+#define R_INFO         0x1348u  /* {u32 type, f32 value, u32 status}[9] */
+#define R_INFO_STRIDE  12u
 
 int rp_innate_enabled = 1;
 
@@ -97,6 +99,14 @@ static int overlay(uint8_t *rec, const char *where)
     memcpy(rec + R_KILLCNT,    p->kill_cnt,         sizeof p->kill_cnt);
     memcpy(rec + R_UNIQUECNT,  p->unique_cnt,       sizeof p->unique_cnt);
     memcpy(rec + R_LOCALSTUDY, p->local_study_flag, sizeof p->local_study_flag);
+
+    if (p->has_incl)
+        for (int i = 0; i < RP_INCL; i++) {
+            uint8_t *e = rec + R_INFO + (uint32_t)i * R_INFO_STRIDE;
+            memcpy(e,     &p->incl_type[i],   4);
+            memcpy(e + 4, &p->incl_value[i],  4);
+            memcpy(e + 8, &p->incl_status[i], 4);
+        }
 
     patch_logf("%s: %08X '%s' (lv %u) restored: voc %u rank %u, DP %d",
                where, key, p->name, lv, p->job,

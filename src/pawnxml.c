@@ -118,6 +118,19 @@ static int get_scalar(xspan in, const char *name, long long *out)
     return parse_long(v, q, out);
 }
 
+static int get_scalar_f(xspan in, const char *name, float *out)
+{
+    char nd[96];
+    int n = snprintf(nd, sizeof nd, "name=\"%s\" value=\"", name);
+    if (n <= 0 || n >= (int)sizeof nd) return -1;
+    const char *h = xfind(in, nd);
+    if (!h) return -1;
+    const char *v = h + n;
+    const char *q = memchr(v, '"', (size_t)(in.end - v));
+    if (!q) return -1;
+    return parse_float(v, q, out);
+}
+
 enum etype { E_U8, E_S8, E_S16, E_U32, E_S32, E_F32 };
 
 static const char *etype_name(enum etype t)
@@ -264,6 +277,27 @@ int rp_parse_cmc(const char *xml, size_t len, struct rp_pawn *out)
     if (get_array(cmc, "mStudyData.EncountFrame", E_F32, RP_STUDY_ENEMY, out->encount_frame))   return -19;
     if (get_array(cmc, "mStudyData.KillCnt",     E_U32, RP_STUDY_ENEMY, out->kill_cnt))         return -20;
     if (get_array(cmc, "mStudyData.UniqueCnt",   E_U8,  RP_STUDY_UNIQ,  out->unique_cnt))       return -21;
+
+    /* inclinations: optional, all nine or none */
+    static const char *const INCL[RP_INCL] = {
+        "BELLIGERENT", "PRUDENT", "POOR_AIM", "STRATEGY", "TACTICS",
+        "PROTECTION", "SAME_SUPPORT", "CURIOSITY", "GATHER" };
+    int ok = 1;
+    for (int i = 0; ok && i < RP_INCL; i++) {
+        char nm[64];
+        long long t, st;
+        snprintf(nm, sizeof nm, "mInfo[ INFO_TYPE_%s ].mInfoType", INCL[i]);
+        ok = get_scalar(cmc, nm, &t) == 0;
+        snprintf(nm, sizeof nm, "mInfo[ INFO_TYPE_%s ].mValue", INCL[i]);
+        ok = ok && get_scalar_f(cmc, nm, &out->incl_value[i]) == 0;
+        snprintf(nm, sizeof nm, "mInfo[ INFO_TYPE_%s ].mStatus", INCL[i]);
+        ok = ok && get_scalar(cmc, nm, &st) == 0;
+        if (ok) {
+            out->incl_type[i]   = (uint32_t)t;
+            out->incl_status[i] = (uint32_t)st;
+        }
+    }
+    out->has_incl = (uint8_t)ok;
     return 0;
 }
 

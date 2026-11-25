@@ -12,7 +12,7 @@ WINDRESFLAGS := -DREALPAWNS_VER_NUM=$(VER_NUM) '-DREALPAWNS_VER_STR=\"$(VERSION)
 
 SRC_DIR := src
 TARGET  := realpawns.dll
-SRC     := $(addprefix $(SRC_DIR)/,realpawns.c patch.c savehook.c pawnxml.c store.c rift.c discipline.c skilltabs.c innate.c vocation.c)
+SRC     := $(addprefix $(SRC_DIR)/,realpawns.c patch.c savehook.c pawnxml.c store.c rift.c discipline.c skilltabs.c innate.c vocation.c inclination.c)
 RES     := realpawns.res.o
 
 # realpawns.dll sits next to DDDA.exe / dinput8.dll and is loaded via

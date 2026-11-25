@@ -214,9 +214,20 @@ int store_capture_save(const void *sav, int len)
         put(&p);
         LeaveCriticalSection(&g_lock);
         written++;
+        static const char *const INCLN[RP_INCL] = {
+            "Scather", "Medicant", "Mitigator", "Challenger", "Utilitarian",
+            "Guardian", "Nexus", "Pioneer", "Acquisitor" };
+        char incl[160] = "";
+        int n = 0;
+        for (int k = 0; p.has_incl && k < RP_INCL; k++)
+            if (p.incl_status[k] && n < (int)sizeof incl - 32)
+                n += _snprintf(incl + n, sizeof incl - n, "%s%s %.0f",
+                               n ? ", " : "", INCLN[k], p.incl_value[k]);
+        incl[sizeof incl - 1] = 0;
         patch_logf("capture: slot %d: '%s' %08X (lv %u, voc %u rank %u, "
-                   "DP %d) saved", slot, p.name, p.key, p.level, p.job,
-                   p.job < RP_JOBS ? p.job_level[p.job] : 0, p.job_point);
+                   "DP %d, inclination %s) saved", slot, p.name, p.key,
+                   p.level, p.job, p.job < RP_JOBS ? p.job_level[p.job] : 0,
+                   p.job_point, !p.has_incl ? "missing" : n ? incl : "none");
     }
     free(xml);
     return written;

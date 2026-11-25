@@ -14,8 +14,8 @@ FEATURES
 --------
 
 - Pawns remember. Each time the game saves, the gear, learned and
-  equipped skills, augments, vocation ranks, Discipline and bestiary
-  knowledge of your hired pawns are stored. The next time the same pawn
+  equipped skills, augments, vocation ranks, Discipline, inclination and
+  bestiary knowledge of your hired pawns are stored. The next time the same pawn
   turns up, in the level search, your favorites, your history or the
   rift's own selection, it has all of that again. That holds in a new
   playthrough too, and across save files.
@@ -39,6 +39,12 @@ FEATURES
   the main pawn's row and can change vocation with its own rank and
   Discipline. The usual level requirement applies (advanced vocations
   from level 10). Optionally the elixir is used up on each change.
+- Inclination elixirs for any pawn. The nine inclination elixirs
+  (Scather's to Acquisitor's) and the Neutralizing Elixir can be used
+  from your main pawn's and your support pawns' inventories. They act on
+  the pawn that carries them, so you can steer a support pawn's
+  inclination too. Used from your own inventory they still go to your
+  main pawn, as before.
 - Configurable. Each feature can be switched off in realpawns.ini.
 - Reversible. All changes are made in memory while the game runs. Remove
   realpawns.dll and the game goes back to its stock behaviour. Progress
@@ -88,6 +94,7 @@ INSTALLATION
        discipline: ready
        skill tabs: ready
        vocation change: ready (marker item 1529, kept)
+       inclination elixirs: ready
 
    A realpawns folder is created next to the DLL. It holds one file per
    pawn you have hired (named after the pawn's rift id). Keep it if you
@@ -110,6 +117,7 @@ set it to 0 to turn that feature off.
     skill_tabs = 1         ; inn skill screen has tabs for them
     innate_skills = 1      ; rift pawns know the vocation starting skills
     vocation_change = 1    ; support pawns can change vocation
+    inclination_elixirs = 1 ; elixirs usable from any pawn's inventory
 
     [vocation]
     marker_item = 1529     ; item that picks the pawn (Neutralizing Elixir)
@@ -131,6 +139,10 @@ NOTES
   pawn; take the item back to change your main pawn. Cancelling costs
   nothing. Rift pawns come with every vocation unlocked, so they pay no
   Discipline to unlock one.
+- Inclination: support pawns' inclinations still never drift on their
+  own; only elixirs change them. The Neutralizing Elixir is also the
+  default vocation marker, so using it from a pawn's inventory uses up
+  that pawn's marker.
 
 
 BUILDING
@@ -163,6 +175,7 @@ Source layout:
     src/skilltabs.c   support pawn tabs on the inn skill screen
     src/innate.c      vocation starting skills
     src/vocation.c    vocation change for support pawns
+    src/inclination.c inclination elixirs from any pawn's inventory
 
 realpawns.md has the reverse-engineering notes: every game address
 used, and why.

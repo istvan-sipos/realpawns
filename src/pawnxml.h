@@ -22,6 +22,7 @@
 #define RP_STUDY       322
 #define RP_STUDY_ENEMY 72
 #define RP_STUDY_UNIQ  116
+#define RP_INCL        9      /* inclinations, mInfo[ INFO_TYPE_* ]    */
 
 struct rp_gear {
     int16_t  item_no;         /* -1 = empty */
@@ -53,6 +54,12 @@ struct rp_pawn {
     float    encount_frame[RP_STUDY_ENEMY];
     uint32_t kill_cnt[RP_STUDY_ENEMY];
     uint8_t  unique_cnt[RP_STUDY_UNIQ];
+
+    /* optional: has_incl = 0 when the block lacks mInfo */
+    uint8_t  has_incl;
+    uint32_t incl_type[RP_INCL];
+    float    incl_value[RP_INCL];
+    uint32_t incl_status[RP_INCL];  /* 2 dominant, 1 active, 0 inactive */
 };
 
 /* Is `key` an official offline pawn key realpawns handles?
