@@ -8,6 +8,7 @@
 #include "discipline.h"
 #include "skilltabs.h"
 #include "innate.h"
+#include "vocation.h"
 
 #ifndef REALPAWNS_VERSION
 #define REALPAWNS_VERSION "dev"
@@ -20,6 +21,7 @@ static int   g_persist = 1;
 static int   g_discipline = 1;
 static int   g_skill_tabs = 1;
 static int   g_innate = 1;
+static int   g_vocation = 1;
 
 static void write_log(const char *msg)
 {
@@ -52,6 +54,9 @@ static void read_config(void)
     g_discipline = GetPrivateProfileIntA("features", "discipline", 1, ini) != 0;
     g_skill_tabs = GetPrivateProfileIntA("features", "skill_tabs", 1, ini) != 0;
     g_innate     = GetPrivateProfileIntA("features", "innate_skills", 1, ini) != 0;
+    g_vocation   = GetPrivateProfileIntA("features", "vocation_change", 1, ini) != 0;
+    rp_vc_marker = GetPrivateProfileIntA("vocation", "marker_item", 1529, ini);
+    rp_vc_consume = GetPrivateProfileIntA("vocation", "consume_marker", 0, ini) != 0;
 }
 
 static void open_log(void)
@@ -109,6 +114,13 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID reserved)
                        "NOT installed (see above)");
         else
             patch_logf("skill tabs: disabled in realpawns.ini");
+
+        if (g_vocation)
+            patch_logf("vocation change: %s (marker item %d, %s)",
+                       vocation_install() ? "ready" : "NOT installed (see above)",
+                       rp_vc_marker, rp_vc_consume ? "used up" : "kept");
+        else
+            patch_logf("vocation change: disabled in realpawns.ini");
     } else if (reason == DLL_PROCESS_DETACH) {
         patch_logf("realpawns.dll unloaded");
         if (g_log) fclose(g_log);

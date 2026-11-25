@@ -454,3 +454,101 @@ Project skills live in `.claude/skills/`:
 - `ddsavetool`: decode saves to XML (hired-pawn blocks, `mRomPawnUniqueID`).
 
 The `.exe` binaries are git-ignored and supplied by the user.
+
+### Vocation change via a marker item (1.1.0)
+
+Plan: when the vocation screen opens, take the first present support pawn
+(slot 2, then 3) carrying a Neutralizing Elixir, swap its party data into
+the main pawn row while the screen is open, swap back on close, and remove
+one elixir only if the vocation changed. Implemented in 1.1.0 as a row
+redirect (below), not a swap; marker and consumption are configurable.
+
+Save facts (DDDA.sav, Dominic in slot 3 holding one elixir):
+
+- Neutralizing Elixir = item **1529** (a tool, not a consumable).
+- Inventories: `<array name="mItem" count="4">` of `cSAVE_DATA_ITEM`, one per
+  party slot 0..3 (`mItemCount` + 256 `sItemManager::cITEM_PARAM_DATA`:
+  mNum, mItemNo, mFlag, mChgNum, mDay1/2, mMutationPool, mOwnerId, mKey).
+  Slot 3's bag: {50 ×1}, {1529 ×1}; mFlag 1, mOwnerId 3, mKey 1.
+- Other 1529 hits are in storage (mOwnerId 4, ×2) and elsewhere (mOwnerId 0, ×3).
+- Still to find: the live inventory location and the game's item-remove function.
+
+#### Research results (2026-11-24)
+
+**Swapping party data is out.** On apply, `FUN_00671d00(EAX=slot)` calls
+`FUN_00458fc0(slot)`, which unequips all 12 gear pieces held in the item
+manager (`DAT_018db4b4`, per-owner block `+slot*0x11E8`, equip pointers at
+`+0x3D0`), and `FUN_004425a0` recomputes stats for all four slots from
+that item manager. Gear, bags and actors are keyed by slot index, not by the
+0x1660 param block, so a param swap would unequip the main pawn's gear and
+mix up stats.
+
+**Redirect row 1 instead.** The screen's slot-1 accesses all sit in the
+uGUIJobChange code (0x0066FD30..0x006744xx). With a global `g_row1` (1 =
+vanilla) every patch is a no-op unless an elixir pawn was chosen.
+
+- Hardcoded slot 1 (`pBase+0xA7EC0` = slot-1 param):
+  - `FUN_00670130` init: `0x006701F8` (present test, decides whether row 1
+    exists at all), `0x0067020B` (current job), `0x00670527`/`0x00670539`
+    (alive, +0x354, actor index), `0x006707A6` (name).
+  - `FUN_006721b0` (refresh): `0x0067220C` (DP for the unlock-cost check).
+- Row-indexed, `IMUL r,0x1660 ; LEA x,[r+pBase+0xA6860]` after `row==4` /
+  `row==0` checks:
+  - `0x006734F2`, `0x006736F7` (`FUN_00673360`, skill list for the new job)
+  - `0x00673D68` (`FUN_00673d40`, vocation list: 3/6/9 entries)
+  - `0x006740DC` (`FUN_00674090`, list build + working copy)
+  - `0x00674436` (`FUN_006743e0`, "can select" check: DP vs cost)
+- `FUN_006711d0` state 0xB (unlock): `0x0067179B` calls `FUN_00442570` for
+  the row's param, then `param+0x344 -= cost` (DP; the pawn pays its own).
+- `FUN_006711d0` state 3 waits for `pBase+0xAC3C0+row*4` refresh flags of
+  rows 0/1 to clear (optional to redirect).
+- Apply `FUN_00674360` (called from states 0xC/0xD): small, replace it.
+  Per row: `param+0x10 = job`, `FUN_00671d00(EAX=slot; push obj, job)`
+  (unequip, starter-gear gifts only in game-start mode `+0x298`, stats for
+  all slots, `FUN_00672f60` starting skills), `FUN_0077dd00(ECX=param)`,
+  `FUN_0077dfb0`, `pBase+0xAC3C0+slot*4 = 1`.
+- Present test `FUN_0077da70(EAX=param)`: `+4 != 0`, `+0x354 == 0`, actor via
+  `param+8` (0 → `*0x018DB4CC+0x99C`, n → `+0x9A0+(n-1)*4`) != 0. Vanilla
+  hides row 1 when the main pawn isn't present (e.g. dead).
+- No save call anywhere in the state machine.
+
+**Items.**
+- Per-owner bag container = `itemMgr + owner*0x11E8 + 0x178` (+8 count,
+  +0x14 item pointer array, +0x24C carried weight). Owners 0..3 = party
+  slots, 4 = storage. Item object: +0x10 s16 itemNo, +0x12 s16 num,
+  +0x14 owner, +0x20 flags.
+- Find: `FUN_0045f500` thiscall(ECX=itemMgr, EAX=owner; push itemNo, push
+  kind=0) → item or 0 (0 also when the owner slot's +4 is 0). Takes the lock.
+- Remove: `FUN_00458230(EAX=item, ESI=container; push count)`, under the
+  item-manager lock (`itemMgr+4`, taken when `itemMgr+0x1C` or
+  `byte 0x018B1B90`). The game's own use: `FUN_004615f0` (dismissed support
+  pawn's bag → storage) does `item+0x20 &= ~0x80` then `FUN_00458230`.
+
+#### Implementation (1.1.0, `src/vocation.c`)
+
+`rp_vc_row1` (party slot shown in row 1, 1 = vanilla) and `rp_vc_off`
+(its param offset) are read by every shim:
+
+- init: vtable[1] `0x0156373C` (= `0x00670130`) points at a wrapper.
+  Before: pick slot 2/3 (present per `FUN_0077da70` rules and carrying the
+  marker; logs each slot's alive/gone/actor/marker count). After: rewrite
+  row-1 unlock costs `gui+0x284` (s16[10]): flag id `0x014F9024[10+j] < 0`
+  → 0, else locked → `0x014F904C[j]`, else 0. Locked = `jobLevel[j] == 1 &&
+  jobNext[j] == 0` (user's rule; never true for game-made rift records,
+  which reset to rank 1 / next 1 in `FUN_00783bb0` and then get the normal
+  thresholds, so in practice support pawns never pay to unlock).
+- A1 `0x006701F8`, A2 `0x0067020B`, A3 `0x00670527` (alive/gone/actor index
+  block, resumes `0x0067053F` / `0x0067056F`), A4 `0x006707A6`, B
+  `0x0067220C`: `pBase+0xA7EC0` → `pBase+rp_vc_off`.
+- C: `IMUL r,r,0x1660` at `0x006734EC`, `0x006736F1`, `0x00673D62`,
+  `0x006740D6`, `0x00674430`: r = 1 → `rp_vc_row1` first.
+- D `0x0067179B`: CALL `FUN_00442570` via a shim mapping EAX (row) the same way.
+- E `0x006717E4`: CALL `FUN_00401280` (set shared unlock flag) skipped when
+  ESI = 1 and redirected.
+- F `0x006713AF`: the close wait reads the redirected slot's refresh flag.
+- G `0x00674360`: replaced by `voc_apply` (same per-row calls with EBX = gui,
+  ESI = slot, EDI = param; refresh flag per slot; marker removal if
+  `consume_marker` and the vocation actually changed).
+
+Item calls: `FUN_0045f500` (find, ret 8) and `FUN_00458230` (remove, ret 4)
+under the item-manager lock (recursive critical section at `itemMgr+4`).

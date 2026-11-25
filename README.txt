@@ -34,6 +34,11 @@ FEATURES
   upgrades could never be learned. realpawns gives every rift pawn the
   starting skills of every vocation, like a character who has tried
   them all. Skills you normally buy with Discipline are not given away.
+- Vocation change for support pawns. Give a support pawn a Neutralizing
+  Elixir (configurable), then open the vocation screen: that pawn takes
+  the main pawn's row and can change vocation with its own rank and
+  Discipline. The usual level requirement applies (advanced vocations
+  from level 10). Optionally the elixir is used up on each change.
 - Configurable. Each feature can be switched off in realpawns.ini.
 - Reversible. All changes are made in memory while the game runs. Remove
   realpawns.dll and the game goes back to its stock behaviour. Progress
@@ -82,6 +87,7 @@ INSTALLATION
        persist: ready
        discipline: ready
        skill tabs: ready
+       vocation change: ready (marker item 1529, kept)
 
    A realpawns folder is created next to the DLL. It holds one file per
    pawn you have hired (named after the pawn's rift id). Keep it if you
@@ -103,6 +109,11 @@ set it to 0 to turn that feature off.
     discipline = 1         ; support pawns earn Discipline, no XP
     skill_tabs = 1         ; inn skill screen has tabs for them
     innate_skills = 1      ; rift pawns know the vocation starting skills
+    vocation_change = 1    ; support pawns can change vocation
+
+    [vocation]
+    marker_item = 1529     ; item that picks the pawn (Neutralizing Elixir)
+    consume_marker = 0     ; 1 = one is used up per vocation change
 
 
 NOTES
@@ -114,7 +125,12 @@ NOTES
   pawnlib-offline's archive) are left alone.
 - The same rift pawn found at a different level is a different pawn to
   the game, so it has its own progress.
-- Support pawns still can't change vocation.
+- Vocation change: the first support pawn that is present (not dead or
+  away) and carries the marker item is picked, slot 2 before slot 3. While
+  one carries it, the vocation screen shows that pawn instead of your main
+  pawn; take the item back to change your main pawn. Cancelling costs
+  nothing. Rift pawns come with every vocation unlocked, so they pay no
+  Discipline to unlock one.
 
 
 BUILDING
@@ -146,6 +162,7 @@ Source layout:
     src/discipline.c  Discipline without XP for support pawns
     src/skilltabs.c   support pawn tabs on the inn skill screen
     src/innate.c      vocation starting skills
+    src/vocation.c    vocation change for support pawns
 
 realpawns.md has the reverse-engineering notes: every game address
 used, and why.
