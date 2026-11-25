@@ -1,0 +1,6 @@
+# arctool.exe is a third-party binary; keep it out of git.
+arctool.exe
+*.exe
+
+# arctool scratch output.
+log.txt

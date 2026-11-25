@@ -1,0 +1,6 @@
+# ddsavetool.exe is a third-party binary; keep it out of git.
+ddsavetool.exe
+*.exe
+
+# Save backups created by the ddsave wrapper.
+backups/

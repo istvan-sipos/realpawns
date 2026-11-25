@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+#
+# ddsave — Dragon's Dogma: Dark Arisen save (un)packer
+#
+# A safe wrapper around tools/ddsavetool.exe (run via wine on Linux).
+#
+#   ddsave unpack    <savefile> [out.xml]        Extract a .sav to editable XML
+#   ddsave repack    <xml|sav>  [out.sav] [--console]
+#                                                Repack XML back into a .sav
+#   ddsave convert   <console_savedata> <pc.sav> Convert a console save to PC
+#   ddsave roundtrip <savefile>                  Verify unpack/repack is lossless
+#
+# Every command that overwrites an existing .sav first copies it to a
+# timestamped backup in a "backups/" directory next to the file.
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+TOOL="$SCRIPT_DIR/ddsavetool.exe"
+
+die()  { printf 'ddsave: error: %s\n' "$*" >&2; exit 1; }
+info() { printf 'ddsave: %s\n' "$*" >&2; }
+
+_TMPDIR=""
+cleanup() { [ -n "$_TMPDIR" ] && rm -rf "$_TMPDIR"; return 0; }
+trap cleanup EXIT
+
+usage() {
+	sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//'
+	exit "${1:-0}"
+}
+
+# Resolve an absolute path without requiring the file to exist yet.
+abspath() {
+	local p="$1" dir base
+	dir="$(dirname -- "$p")"
+	base="$(basename -- "$p")"
+	printf '%s/%s\n' "$(cd -- "$dir" && pwd)" "$base"
+}
+
+# Copy <file> to <dir>/backups/<name>.<timestamp>.bak before it is touched.
+backup() {
+	local file="$1" dir name bdir dest
+	[ -e "$file" ] || return 0
+	dir="$(dirname -- "$file")"
+	name="$(basename -- "$file")"
+	bdir="$dir/backups"
+	mkdir -p "$bdir"
+	dest="$bdir/$name.$(date +%Y%m%d-%H%M%S).bak"
+	cp -p -- "$file" "$dest"
+	info "backed up $name -> backups/$(basename -- "$dest")"
+}
+
+# Run ddsavetool.exe via wine. Exit codes are unreliable, so callers must
+# verify success themselves; this only surfaces the tool's own "Error:" line.
+run_tool() {
+	local out
+	out="$(cd -- "$SCRIPT_DIR" && wine "$TOOL" "$@" 2>/dev/null)" || true
+	printf '%s\n' "$out"
+	if printf '%s' "$out" | grep -q '^Error:'; then
+		die "ddsavetool.exe: $(printf '%s' "$out" | grep '^Error:' | head -1)"
+	fi
+}
+
+require_setup() {
+	[ -f "$TOOL" ] || die "tool not found: $TOOL"
+	command -v wine >/dev/null 2>&1 || die "wine is not installed"
+}
+
+cmd_unpack() {
+	[ $# -ge 1 ] || usage 1
+	local src dst auto
+	src="$(abspath "$1")"
+	[ -f "$src" ] || die "save file not found: $1"
+
+	# ddsavetool writes <src>.xml next to the input.
+	auto="$src.xml"
+	dst="${2:+$(abspath "$2")}"
+
+	run_tool -u "$src" >/dev/null
+	[ -s "$auto" ] || die "unpack produced no XML (is this a valid DDDA save?)"
+
+	if [ -n "$dst" ] && [ "$dst" != "$auto" ]; then
+		backup "$dst"
+		mv -f -- "$auto" "$dst"
+	else
+		dst="$auto"
+	fi
+	info "unpacked -> $dst"
+}
+
+cmd_repack() {
+	[ $# -ge 1 ] || usage 1
+	local platform="-pc" args=() xml dst auto
+	for a in "$@"; do
+		case "$a" in
+			--console) platform="-console" ;;
+			--pc)      platform="-pc" ;;
+			*)         args+=("$a") ;;
+		esac
+	done
+	[ ${#args[@]} -ge 1 ] || usage 1
+
+	# Accept either the .xml or the .sav name as the first argument.
+	xml="$(abspath "${args[0]}")"
+	case "$xml" in
+		*.xml) : ;;
+		*)     xml="$xml.xml" ;;
+	esac
+	[ -f "$xml" ] || die "XML not found: $xml"
+
+	# ddsavetool writes the .sav by stripping the trailing .xml.
+	auto="${xml%.xml}"
+	dst="${args[1]:+$(abspath "${args[1]}")}"
+	[ -n "$dst" ] || dst="$auto"
+
+	# Back up whatever .sav we are about to overwrite.
+	[ "$dst" = "$auto" ] && backup "$auto" || { backup "$auto"; backup "$dst"; }
+
+	run_tool -r "$platform" "$xml" >/dev/null
+	[ -s "$auto" ] || die "repack produced no save file"
+
+	if [ "$dst" != "$auto" ]; then
+		mv -f -- "$auto" "$dst"
+	fi
+	info "repacked ($platform) -> $dst"
+}
+
+cmd_convert() {
+	[ $# -ge 2 ] || usage 1
+	local console pc
+	console="$(abspath "$1")"
+	pc="$(abspath "$2")"
+	[ -f "$console" ] || die "console save not found: $1"
+	[ -f "$pc" ]      || die "pc save (template) not found: $2"
+	backup "$pc"
+	run_tool -c "$console" "$pc" >/dev/null
+	info "converted console save -> $pc (PC format)"
+}
+
+cmd_roundtrip() {
+	[ $# -ge 1 ] || usage 1
+	local src tmp
+	src="$(abspath "$1")"
+	[ -f "$src" ] || die "save file not found: $1"
+	_TMPDIR="$(mktemp -d)"
+	tmp="$_TMPDIR"
+	cp -p -- "$src" "$tmp/s.sav"
+
+	run_tool -u "$tmp/s.sav" >/dev/null
+	[ -s "$tmp/s.sav.xml" ] || die "roundtrip: unpack failed"
+	cp -p -- "$tmp/s.sav.xml" "$tmp/first.xml"
+
+	run_tool -r -pc "$tmp/s.sav.xml" >/dev/null
+	run_tool -u "$tmp/s.sav" >/dev/null
+
+	if cmp -s "$tmp/first.xml" "$tmp/s.sav.xml"; then
+		info "roundtrip OK: unpack/repack is lossless for $(basename -- "$src")"
+	else
+		die "roundtrip FAILED: XML differs after repack — do not trust this save"
+	fi
+}
+
+main() {
+	[ $# -ge 1 ] || usage 1
+	require_setup
+	local sub="$1"; shift
+	case "$sub" in
+		unpack)        cmd_unpack "$@" ;;
+		repack)        cmd_repack "$@" ;;
+		convert)       cmd_convert "$@" ;;
+		roundtrip)     cmd_roundtrip "$@" ;;
+		-h|--help|help) usage 0 ;;
+		*)             die "unknown command: $sub (try: ddsave --help)" ;;
+	esac
+}
+
+main "$@"

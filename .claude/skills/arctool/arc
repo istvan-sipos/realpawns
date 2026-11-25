@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+#
+# arc — Dragon's Dogma: Dark Arisen .arc archive (un)packer
+#
+# A safe wrapper around tools/arctool.exe (run via wine on Linux).
+#
+#   arc extract <archive.arc> [workdir]   Extract an .arc for editing
+#   arc repack  <archive.arc> [workdir]   Rebuild the .arc and install it
+#   arc restore <archive.arc>             Revert the .arc to its .original
+#   arc list    <archive.arc>             List archive contents (read-only)
+#
+# Before an .arc is first edited, a one-time pristine copy is made next
+# to it: "<archive.arc>.original" (created only if it does not exist, so
+# the vanilla file is preserved no matter how many times you re-pack).
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+TOOL="$SCRIPT_DIR/arctool.exe"
+
+# Flags proven to round-trip DDDA archives (same as the reference
+# ddda_shop_mods/main.py): DD game, RE6 tex, force compression, PC
+# platform, text file order, arc version 7, XFS<->XML conversion.
+FLAGS=(-dd -texRE6 -alwayscomp -pc -txt -v 7 -xfs)
+
+die()  { printf 'arc: error: %s\n' "$*" >&2; exit 1; }
+info() { printf 'arc: %s\n' "$*" >&2; }
+
+usage() {
+	sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'
+	exit "${1:-0}"
+}
+
+abspath() {
+	local p="$1" dir base
+	dir="$(dirname -- "$p")"
+	base="$(basename -- "$p")"
+	printf '%s/%s\n' "$(cd -- "$dir" && pwd)" "$base"
+}
+
+# Create "<arc>.original" once. Never overwrites an existing one, so the
+# pristine vanilla archive survives every later repack.
+ensure_original() {
+	local arc="$1" orig="$1.original"
+	if [ -e "$orig" ]; then
+		info "pristine backup present: $(basename -- "$orig")"
+	else
+		cp -p -- "$arc" "$orig"
+		info "created pristine backup: $(basename -- "$orig")"
+	fi
+}
+
+# arctool exit codes are unreliable (0 on success AND on a missing-file
+# error), so success is judged by output text + verifying outputs.
+run_tool() {
+	local out
+	out="$(cd -- "$WORK" && wine "$TOOL" "${FLAGS[@]}" "$@" 2>/dev/null)" || true
+	if printf '%s' "$out" | grep -qi '^Error:'; then
+		die "arctool.exe: $(printf '%s' "$out" | grep -i '^Error:' | head -1)"
+	fi
+	printf '%s\n' "$out"
+}
+
+require_setup() {
+	[ -f "$TOOL" ] || die "tool not found: $TOOL"
+	command -v wine >/dev/null 2>&1 || die "wine is not installed"
+}
+
+# Resolve arc path + derived names. Sets: ARC, NAME, WORK.
+resolve() {
+	local arg="$1" workarg="${2:-}"
+	ARC="$(abspath "$arg")"
+	[ -f "$ARC" ] || die "archive not found: $arg"
+	case "$ARC" in *.arc) ;; *) die "not an .arc file: $arg" ;; esac
+	NAME="$(basename -- "$ARC" .arc)"
+	if [ -n "$workarg" ]; then
+		WORK="$(abspath "$workarg")"
+	else
+		WORK="$(dirname -- "$ARC")/$NAME.work"
+	fi
+}
+
+cmd_extract() {
+	local force="" args=()
+	for a in "$@"; do
+		case "$a" in
+			--force|-f) force=1 ;;
+			*) args+=("$a") ;;
+		esac
+	done
+	[ ${#args[@]} -ge 1 ] || usage 1
+	resolve "${args[0]}" "${args[1]:-}"
+
+	ensure_original "$ARC"
+
+	if [ -e "$WORK" ] && [ -n "$(ls -A "$WORK" 2>/dev/null)" ]; then
+		[ -n "$force" ] || die "workdir not empty: $WORK
+       re-run with --force to discard it and re-extract"
+		rm -rf "$WORK"
+	fi
+	mkdir -p "$WORK"
+
+	cp -p -- "$ARC" "$WORK/$NAME.arc"
+	run_tool -x "$NAME.arc" >/dev/null
+	[ -d "$WORK/$NAME" ] && [ -s "$WORK/$NAME.arc.txt" ] \
+		|| die "extraction produced no files (is this a valid DDDA .arc?)"
+	rm -f "$WORK/log.txt"
+
+	info "extracted -> $WORK/$NAME/"
+	info "edit files there, then: arc repack \"$ARC\"${args[1]:+ \"$WORK\"}"
+}
+
+cmd_repack() {
+	[ $# -ge 1 ] || usage 1
+	resolve "$1" "${2:-}"
+
+	[ -d "$WORK/$NAME" ] || die "no extracted tree at $WORK/$NAME (run: arc extract first)"
+	[ -s "$WORK/$NAME.arc.txt" ] || die "missing file-order manifest $WORK/$NAME.arc.txt"
+
+	# The .arc is about to be overwritten — guarantee the pristine copy.
+	ensure_original "$ARC"
+
+	rm -f "$WORK/$NAME.arc"
+	run_tool -c "$NAME" "$NAME.arc.txt" >/dev/null
+	[ -s "$WORK/$NAME.arc" ] || die "repack produced no archive"
+	rm -f "$WORK/log.txt"
+
+	cp -p -- "$WORK/$NAME.arc" "$ARC"
+	info "repacked & installed -> $ARC ($(stat -c%s "$ARC") bytes)"
+}
+
+cmd_restore() {
+	[ $# -ge 1 ] || usage 1
+	resolve "$1" ""
+	local orig="$ARC.original"
+	[ -f "$orig" ] || die "no pristine backup to restore: $orig"
+	cp -p -- "$orig" "$ARC"
+	info "restored vanilla archive from $(basename -- "$orig") -> $ARC"
+}
+
+cmd_list() {
+	[ $# -ge 1 ] || usage 1
+	resolve "$1" ""
+	WORK="$(mktemp -d)"; _TMPDIR="$WORK"
+	cp -p -- "$ARC" "$WORK/$NAME.arc"
+	# -l only needs the game/platform; it writes "<name>.arc.verbose.txt".
+	local out
+	out="$(cd -- "$WORK" && wine "$TOOL" -dd -pc -l "$NAME.arc" 2>/dev/null)" || true
+	if printf '%s' "$out" | grep -qi '^Error:'; then
+		die "arctool.exe: $(printf '%s' "$out" | grep -i '^Error:' | head -1)"
+	fi
+	local lst="$WORK/$NAME.arc.verbose.txt"
+	[ -s "$lst" ] || die "could not list archive"
+	cat "$lst"
+}
+
+_TMPDIR=""
+cleanup() { [ -n "$_TMPDIR" ] && rm -rf "$_TMPDIR"; return 0; }
+trap cleanup EXIT
+
+main() {
+	[ $# -ge 1 ] || usage 1
+	require_setup
+	local sub="$1"; shift
+	case "$sub" in
+		extract)         cmd_extract "$@" ;;
+		repack)          cmd_repack "$@" ;;
+		restore)         cmd_restore "$@" ;;
+		list)            cmd_list "$@" ;;
+		-h|--help|help)  usage 0 ;;
+		*)               die "unknown command: $sub (try: arc --help)" ;;
+	esac
+}
+
+main "$@"
