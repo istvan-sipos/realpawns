@@ -789,3 +789,23 @@ in-game that slots 2/3 level.
   read); store round trip under wine (load with origin, legacy file
   ignored, counter recovered from files, capture of a crafted save with a
   clone key, external edit reloaded, deleted file dropped).
+
+## Gear for support pawns (1.4.0)
+
+pawnitems 1.0.0 (`~/repos/pawnitems`, f1eae1c) folded in: `src/unequip.c`
+and `src/restrict.c` are its files with the log callback dropped (realpawns
+sets it once) and labels renamed `gear/...`.  Same GOG addresses, same
+signatures; details are in the source comments and in pawnitems.md.
+
+- `gear/send_away` `0x00647B1C`, `gear/prompt` `0x00646FFC` (uGUIEquipment
+  close / action: support-pawn branches skipped).
+- `gear/equip` `0x006455C5` (resume `0x006454A6`), `gear/give`
+  `0x00461172` (JZ to JMP), `gear/withdraw` `0x0071F66E` (+37, JNC NOPed).
+- ini `[gear] keep_items, skip_prompt, allow_equip, allow_give` (pawnitems'
+  `[unequip]`/`[restrict]` keys, one section).
+- Why: the Neutralizing Elixir / inclination elixirs are restricted items
+  (def +0x58 bit 19); without `allow_give` they can't be handed to a
+  support pawn (checked by the user in game), so vocation change and the
+  1.2.0 elixirs depended on pawnitems.
+- Not compatible with pawnitems.dll loaded too, by decision: no module
+  check; the second loader's signature checks fail and it logs that.

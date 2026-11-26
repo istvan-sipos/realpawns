@@ -54,6 +54,14 @@ FEATURES
   the pawn that carries them, so you can steer a support pawn's
   inclination too. Used from your own inventory they still go to your
   main pawn, as before.
+- Gear for support pawns. Gear you take off a support pawn stays in its
+  inventory instead of being sent away when you close the equipment
+  menu, and the "Removing this equipment will send it away" prompt is
+  skipped. Support pawns can equip, be given, and withdraw from storage
+  gear they normally refuse: upgraded gear (such as 3-star or
+  dragonforged) and restricted item types, which include the elixirs
+  above. Vocation rules still apply: a pawn can't equip gear its
+  vocation can't use.
 - Configurable. Each feature can be switched off in realpawns.ini.
 - Reversible. All changes are made in memory while the game runs. Remove
   realpawns.dll and the game goes back to its stock behaviour. Progress
@@ -73,9 +81,10 @@ REQUIREMENTS
 - dinput8, which loads add-on DLLs into the game:
   https://github.com/istvan-sipos/dinput8
 
-- Not together with pawnlib-offline. Both mods change the same rift
-  code; whichever loads second refuses to patch and says so in its log.
-  pawnitems works fine alongside realpawns.
+- Not together with pawnlib-offline or pawnitems. realpawns changes the
+  same rift code as pawnlib-offline, and pawnitems' gear features are
+  built into realpawns. Whichever mod loads second refuses to patch and
+  says so in its log.
 
 
 INSTALLATION
@@ -94,7 +103,7 @@ INSTALLATION
 
    If you already load other addons, separate them with semicolons:
 
-       addons = pawnitems.dll;realpawns.dll
+       addons = other.dll;realpawns.dll
 
 4. Launch the game. A realpawns.log file appears next to DDDA.exe. Near
    the top it should say:
@@ -104,6 +113,7 @@ INSTALLATION
        skill tabs: ready
        vocation change: ready (marker item 1529, kept)
        inclination elixirs: ready
+       gear: ready
 
    A realpawns folder is created next to the DLL. It holds one file per
    clone (named after its rift id, 12000001.xml and up) and
@@ -135,6 +145,14 @@ set it to 0 to turn that feature off.
     marker_item = 1529     ; item that picks the pawn (Neutralizing Elixir)
     consume_marker = 0     ; 1 = one is used up per vocation change
 
+    [gear]
+    keep_items = 1         ; unequipped gear stays in the inventory
+    skip_prompt = 1        ; skip the "send it away" confirmation
+    allow_equip = 1        ; support pawns can equip restricted gear
+    allow_give = 1         ; restricted items can be given to them, or
+                           ; withdrawn from storage into their inventory
+                           ; (needed for the elixirs)
+
 
 NOTES
 -----
@@ -165,6 +183,12 @@ NOTES
   own; only elixirs change them. The Neutralizing Elixir is also the
   default vocation marker, so using it from a pawn's inventory uses up
   that pawn's marker.
+- Gear: a few specific items are blocked for support pawns by the
+  game's vocation check rather than the rules above, and stay blocked.
+  dinput8's ignoreEquipVocation option lifts them along with every
+  other vocation restriction.
+- Upgrading from pawnitems: remove pawnitems.dll from the addons line.
+  Its settings now live in realpawns.ini's [gear] section.
 
 
 BUILDING
@@ -198,6 +222,8 @@ Source layout:
     src/innate.c      vocation starting skills
     src/vocation.c    vocation change for support pawns
     src/inclination.c inclination elixirs from any pawn's inventory
+    src/unequip.c     keep gear unequipped from support pawns
+    src/restrict.c    equip / give / withdraw restrictions
 
 realpawns.md has the reverse-engineering notes: every game address
 used, and why.

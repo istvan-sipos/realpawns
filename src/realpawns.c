@@ -10,6 +10,8 @@
 #include "innate.h"
 #include "vocation.h"
 #include "inclination.h"
+#include "unequip.h"
+#include "restrict.h"
 
 #ifndef REALPAWNS_VERSION
 #define REALPAWNS_VERSION "dev"
@@ -24,6 +26,8 @@ static int   g_skill_tabs = 1;
 static int   g_innate = 1;
 static int   g_vocation = 1;
 static int   g_inclination = 1;
+static struct unequip_opts  g_unequip  = { 1, 1 };
+static struct restrict_opts g_restrict = { 1, 1 };
 
 static void write_log(const char *msg)
 {
@@ -61,6 +65,10 @@ static void read_config(void)
     g_inclination = GetPrivateProfileIntA("features", "inclination_elixirs", 1, ini) != 0;
     rp_vc_marker = GetPrivateProfileIntA("vocation", "marker_item", 1529, ini);
     rp_vc_consume = GetPrivateProfileIntA("vocation", "consume_marker", 0, ini) != 0;
+    g_unequip.keep_items  = GetPrivateProfileIntA("gear", "keep_items", 1, ini) != 0;
+    g_unequip.skip_prompt = GetPrivateProfileIntA("gear", "skip_prompt", 1, ini) != 0;
+    g_restrict.equip      = GetPrivateProfileIntA("gear", "allow_equip", 1, ini) != 0;
+    g_restrict.give       = GetPrivateProfileIntA("gear", "allow_give", 1, ini) != 0;
 }
 
 static void open_log(void)
@@ -134,6 +142,16 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID reserved)
                        "NOT installed (see above)");
         else
             patch_logf("inclination elixirs: disabled in realpawns.ini");
+
+        if (g_unequip.keep_items || g_unequip.skip_prompt ||
+            g_restrict.equip || g_restrict.give) {
+            int ok_u = unequip_install(&g_unequip);
+            int ok_g = restrict_install(&g_restrict);
+            patch_logf("gear: %s", ok_u && ok_g ? "ready" :
+                       "one or more patches NOT installed (see above)");
+        } else {
+            patch_logf("gear: disabled in realpawns.ini");
+        }
     } else if (reason == DLL_PROCESS_DETACH) {
         patch_logf("realpawns.dll unloaded");
         if (g_log) fclose(g_log);
