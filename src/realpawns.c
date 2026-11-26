@@ -27,7 +27,7 @@ static int   g_innate = 1;
 static int   g_vocation = 1;
 static int   g_inclination = 1;
 static struct unequip_opts  g_unequip  = { 1, 1 };
-static struct restrict_opts g_restrict = { 1, 1 };
+static struct restrict_opts g_restrict = { 1, 1, 1 };
 
 static void write_log(const char *msg)
 {
@@ -69,6 +69,7 @@ static void read_config(void)
     g_unequip.skip_prompt = GetPrivateProfileIntA("gear", "skip_prompt", 1, ini) != 0;
     g_restrict.equip      = GetPrivateProfileIntA("gear", "allow_equip", 1, ini) != 0;
     g_restrict.give       = GetPrivateProfileIntA("gear", "allow_give", 1, ini) != 0;
+    g_restrict.upgrade_pages = GetPrivateProfileIntA("gear", "upgrade_pages", 1, ini) != 0;
 }
 
 static void open_log(void)
@@ -144,7 +145,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID reserved)
             patch_logf("inclination elixirs: disabled in realpawns.ini");
 
         if (g_unequip.keep_items || g_unequip.skip_prompt ||
-            g_restrict.equip || g_restrict.give) {
+            g_restrict.equip || g_restrict.give || g_restrict.upgrade_pages) {
             int ok_u = unequip_install(&g_unequip);
             int ok_g = restrict_install(&g_restrict);
             patch_logf("gear: %s", ok_u && ok_g ? "ready" :

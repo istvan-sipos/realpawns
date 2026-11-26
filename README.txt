@@ -61,7 +61,8 @@ FEATURES
   gear they normally refuse: upgraded gear (such as 3-star or
   dragonforged) and restricted item types, which include the elixirs
   above. Vocation rules still apply: a pawn can't equip gear its
-  vocation can't use.
+  vocation can't use. Barroch's upgrade screen gets pages for your
+  support pawns too, as the smiths' does.
 - Configurable. Each feature can be switched off in realpawns.ini.
 - Reversible. All changes are made in memory while the game runs. Remove
   realpawns.dll and the game goes back to its stock behaviour. Progress
@@ -152,6 +153,7 @@ set it to 0 to turn that feature off.
     allow_give = 1         ; restricted items can be given to them, or
                            ; withdrawn from storage into their inventory
                            ; (needed for the elixirs)
+    upgrade_pages = 1      ; support pawn pages on Barroch's upgrade screen
 
 
 NOTES

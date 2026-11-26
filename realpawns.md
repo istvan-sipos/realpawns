@@ -801,8 +801,17 @@ signatures; details are in the source comments and in pawnitems.md.
   close / action: support-pawn branches skipped).
 - `gear/equip` `0x006455C5` (resume `0x006454A6`), `gear/give`
   `0x00461172` (JZ to JMP), `gear/withdraw` `0x0071F66E` (+37, JNC NOPed).
+- `gear/upgrade pages` `0x006EA4B7` (+10, JNZ to JMP): new in realpawns,
+  not in pawnitems. `uGUIShopUpgrade` (DTI `0x01972FA8`, size 0x890, ctor
+  `FUN_006e9980(mode)`, init `FUN_006e9fa0`) serves both the smiths (mode 0)
+  and Barroch (mode 1, `gui+0x608`). Its page list `FUN_006ea420` adds one
+  page per present slot 0..3 and then storage (4), with count `gui+0x640`,
+  page slots `gui+0x644[]` and page data `gui+0x2A0 + slot*0xAC`, but skips
+  slots 2/3 when mode == 1. The other mode-1 checks (`0x006EABC5`,
+  `0x006EBA15`, `0x006ED183`, `0x006F05xx..0x006F1220`) cover messages,
+  costs and level caps and don't involve the slot.
 - ini `[gear] keep_items, skip_prompt, allow_equip, allow_give` (pawnitems'
-  `[unequip]`/`[restrict]` keys, one section).
+  `[unequip]`/`[restrict]` keys, one section), plus `upgrade_pages`.
 - Why: the Neutralizing Elixir / inclination elixirs are restricted items
   (def +0x58 bit 19); without `allow_give` they can't be handed to a
   support pawn (checked by the user in game), so vocation change and the

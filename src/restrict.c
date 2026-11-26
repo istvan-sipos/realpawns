@@ -180,6 +180,36 @@ static const uint8_t k_withdraw_sig[] = {
 static const uint8_t k_withdraw_patch[] = { 0x90, 0x90 };
 
 /* ============================================================================
+ * upgrade pages: FUN_006ea420, uGUIShopUpgrade page list (one page per
+ * present party member, then storage)
+ *
+ * The same screen serves the smiths (mode 0) and Barroch (mode 1,
+ * gui+0x608).  In mode 1 the support pawns' pages are left out:
+ *
+ *   006ea4b7  8B 75 08                mov  esi, [ebp+8]       ; gui
+ *   006ea4ba  83 BE 08 06 00 00 01    cmp  dword [esi+608], 1 ; Barroch?
+ *   006ea4c1  75 17                   jnz  006ea4da           ; <- JMP
+ *   006ea4c3  83 FB 02                cmp  ebx, 2             ; slot 2/3:
+ *   006ea4c6  0F 84 23 01 00 00       jz   006ea5ef           ;   skip page
+ *   006ea4cc  83 FB 03                cmp  ebx, 3
+ *   006ea4cf  0F 84 1A 01 00 00       jz   006ea5ef
+ *
+ * Turning the JNZ into a JMP adds their pages in both modes.  The rest of
+ * the screen works by page / slot index, as it does for the smiths.
+ * ============================================================================ */
+
+#define PAGES_SIG_VA         0x006EA4B7u
+#define PAGES_PATCH_OFF      10
+static const uint8_t k_pages_sig[] = {
+    0x8B, 0x75, 0x08,
+    0x83, 0xBE, 0x08, 0x06, 0x00, 0x00, 0x01,
+    0x75, 0x17,
+    0x83, 0xFB, 0x02, 0x0F, 0x84, 0x23, 0x01, 0x00, 0x00,
+    0x83, 0xFB, 0x03, 0x0F, 0x84, 0x1A, 0x01, 0x00, 0x00,
+};
+static const uint8_t k_pages_patch[] = { 0xEB };
+
+/* ============================================================================
  * Install
  * ============================================================================ */
 
@@ -211,6 +241,14 @@ int restrict_install(const struct restrict_opts *opts)
                           k_withdraw_patch, sizeof(k_withdraw_patch));
     } else {
         patch_logf("gear/give: disabled in realpawns.ini (give + withdraw)");
+    }
+
+    if (opts->upgrade_pages) {
+        ok &= patch_bytes("gear/upgrade pages", PAGES_SIG_VA,
+                          k_pages_sig, sizeof(k_pages_sig), PAGES_PATCH_OFF,
+                          k_pages_patch, sizeof(k_pages_patch));
+    } else {
+        patch_logf("gear/upgrade pages: disabled in realpawns.ini");
     }
     return ok;
 }

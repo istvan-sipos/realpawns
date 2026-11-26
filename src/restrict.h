@@ -17,6 +17,9 @@
  *          FUN_0071f580 is the storage menu's own copy of that rule (how
  *          many of a stored item a party member can withdraw; 0 greys the
  *          name out).  Both are patched together under `give`.
+ *   pages  FUN_006ea420: page list of the upgrade screen (uGUIShopUpgrade).
+ *          Barroch's mode leaves out the support pawns' pages; the patch
+ *          lists them as the smiths do.
  *
  * Addresses are for the GOG build, signature-checked before patching. */
 
@@ -25,6 +28,7 @@
 struct restrict_opts {
     int equip;   /* install the equip patch */
     int give;    /* install the give and withdraw patches */
+    int upgrade_pages; /* support pawn pages at Barroch's */
 };
 
 /* Returns 1 if every requested patch was installed, 0 otherwise. */
