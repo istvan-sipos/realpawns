@@ -109,7 +109,8 @@ INSTALLATION
 4. Launch the game. A realpawns.log file appears next to DDDA.exe. Near
    the top it should say:
 
-       persist: ready
+       clones: ready
+       persist: on
        discipline: ready, leveling on
        skill tabs: ready
        vocation change: ready (marker item 1529, kept)
@@ -134,7 +135,7 @@ set it to 0 to turn that feature off.
                            ; or append
 
     [features]
-    persist = 1            ; hired pawns become clones that keep progress
+    persist = 1            ; hired clones' progress is saved for rehire
     discipline = 1         ; support pawns earn Discipline
     leveling = 1           ; clones also gain XP and level up
     skill_tabs = 1         ; inn skill screen has tabs for them
@@ -159,6 +160,11 @@ set it to 0 to turn that feature off.
 NOTES
 -----
 
+- persist = 0 still makes a clone on every hire, and it still earns
+  Discipline and levels up, but only for as long as it is in your party.
+  Nothing is written to the realpawns folder, so once it leaves it can't
+  be hired again. Clones saved earlier still show up in the rift as they
+  were saved, and their files aren't updated.
 - Progress is stored when the game saves. A clone you dismiss before
   the next save forgets what it learned since the last one; one you
   hire and dismiss before any save is never stored at all.

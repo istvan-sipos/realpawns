@@ -85,6 +85,7 @@ static void on_save_written(const void *sav, int len)
 {
     /* the save just written lacks them; the next one will have them */
     if (g_innate) innate_grant_party();
+    if (!g_persist) return;
     int n = store_capture_save(sav, len);
     if (n > 0) {
         /* the rift pool may already hold an older copy of these pawns */
@@ -106,18 +107,18 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID reserved)
         rp_innate_enabled = g_innate && innate_init() > 0;
         if (!g_innate) patch_logf("innate: disabled in realpawns.ini");
 
-        if (g_persist) {
-            store_init(g_dir);
-            int ok_r = rift_install();
-            int ok_s = savehook_install(on_save_written);
-            patch_logf("persist: %s", ok_r && ok_s ? "ready" :
-                       "one or more hooks NOT installed (see above)");
-        } else {
-            patch_logf("persist: disabled in realpawns.ini");
-        }
+        /* clones are always made; persist only decides whether the save
+         * hook writes their files (read back either way) */
+        store_init(g_dir);
+        int ok_r = rift_install();
+        int ok_s = savehook_install(on_save_written);
+        patch_logf("clones: %s", ok_r && ok_s ? "ready" :
+                   "one or more hooks NOT installed (see above)");
+        patch_logf("persist: %s", g_persist ? "on" :
+                   "off in realpawns.ini (clone files are read, not written)");
 
         /* only clones level up, through the Discipline patches */
-        if (!g_persist || !g_discipline) rp_level_up = 0;
+        if (!g_discipline) rp_level_up = 0;
         if (g_discipline)
             patch_logf("discipline: %s, leveling %s",
                        discipline_install() ? "ready" : "NOT installed (see above)",

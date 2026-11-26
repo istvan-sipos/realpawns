@@ -784,7 +784,13 @@ in-game that slots 2/3 level.
 - `discipline`: patch A's shim calls `support_xp(param, xp, [ESP+0x18])`,
   which for clones (and `leveling = 1`) returns the slot-1 catch-up
   amount; patch C lets the exp add through for clone keys.
-- ini `[features] leveling` (default 1; forced off without `persist`).
+- ini `[features] leveling` (default 1; forced off without `discipline`).
+- Since 1.4.0, `persist` only gates writing: `store_init`, the rift hooks
+  and the save hook are always installed (so clones, leveling and the
+  innate grants in the rift hooks and on save work either way), and
+  `on_save_written` skips `store_capture_save` when `persist = 0`. Clone
+  files already in `realpawns\` are still read (search, dispatch, pool)
+  but never rewritten. Log: `clones: ready` + `persist: on/off`.
 - Offline checks: parser against the five 1.2 files (stats, exp, nextExp
   read); store round trip under wine (load with origin, legacy file
   ignored, counter recovered from files, capture of a crafted save with a
