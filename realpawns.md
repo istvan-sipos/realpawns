@@ -791,6 +791,28 @@ in-game that slots 2/3 level.
   `on_save_written` skips `store_capture_save` when `persist = 0`. Clone
   files already in `realpawns\` are still read (search, dispatch, pool)
   but never rewritten. Log: `clones: ready` + `persist: on/off`.
+
+## Configuration cleanup (1.4.0)
+
+The ini switches grew one per experiment; they are folded into four
+`[features]` keys (no compatibility with the old keys, by decision):
+
+| key | covers (old keys) |
+|---|---|
+| `persist` | unchanged: `store_capture_save` on save |
+| `pawn_progression` | `discipline`, `leveling`, `skill_tabs`, `vocation_change` |
+| `inclination_elixirs` | unchanged |
+| `pawn_gear` | `[gear] keep_items`, `skip_prompt`, `allow_equip`, `upgrade_pages` |
+
+- `innate_skills` is gone: always on (only `innate_init`'s table check can
+  turn it off).
+- `allow_give` (give + withdraw patches) is derived: on when any of
+  `pawn_progression`, `inclination_elixirs`, `pawn_gear` is on, because
+  the marker (1529) and the elixirs (1520-1529) are restricted items.
+- `[vocation] marker_item` / `consume_marker` stay as tuning values.
+- Log: `pawn progression: ready (marker item N, kept|used up)`,
+  `pawn gear: ready`, or `pawn gear: disabled ..., giving restricted
+  items on`.
 - Offline checks: parser against the five 1.2 files (stats, exp, nextExp
   read); store round trip under wine (load with origin, legacy file
   ignored, counter recovered from files, capture of a crafted save with a

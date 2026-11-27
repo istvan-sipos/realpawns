@@ -7,6 +7,6 @@
  * if all patches installed. */
 int discipline_install(void);
 
-extern int rp_level_up;   /* ini [features] leveling, default 1 */
+extern int rp_level_up;   /* ini [features] pawn_progression, default 1 */
 
 #endif

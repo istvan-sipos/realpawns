@@ -63,7 +63,8 @@ FEATURES
   above. Vocation rules still apply: a pawn can't equip gear its
   vocation can't use. Barroch's upgrade screen gets pages for your
   support pawns too, as the smiths' does.
-- Configurable. Each feature can be switched off in realpawns.ini.
+- Configurable. Four switches in realpawns.ini: persist, pawn
+  progression, inclination elixirs and pawn gear.
 - Reversible. All changes are made in memory while the game runs. Remove
   realpawns.dll and the game goes back to its stock behaviour. Progress
   already earned stays in your save, as it would after a normal hire.
@@ -111,11 +112,9 @@ INSTALLATION
 
        clones: ready
        persist: on
-       discipline: ready, leveling on
-       skill tabs: ready
-       vocation change: ready (marker item 1529, kept)
+       pawn progression: ready (marker item 1529, kept)
        inclination elixirs: ready
-       gear: ready
+       pawn gear: ready
 
    A realpawns folder is created next to the DLL. It holds one file per
    clone (named after its rift id, 12000001.xml and up) and
@@ -127,8 +126,9 @@ INSTALLATION
 CONFIGURATION
 -------------
 
-realpawns.ini sits next to realpawns.dll. Every option defaults to on;
-set it to 0 to turn that feature off.
+realpawns.ini sits next to realpawns.dll. Every switch defaults to on;
+set it to 0 to turn that feature off. Cloning and the starting skills
+are always on.
 
     [main]
     logging = truncate     ; disabled, truncate (reset each launch),
@@ -136,25 +136,19 @@ set it to 0 to turn that feature off.
 
     [features]
     persist = 1            ; hired clones' progress is saved for rehire
-    discipline = 1         ; support pawns earn Discipline
-    leveling = 1           ; clones also gain XP and level up
-    skill_tabs = 1         ; inn skill screen has tabs for them
-    innate_skills = 1      ; rift pawns know the vocation starting skills
-    vocation_change = 1    ; support pawns can change vocation
+    pawn_progression = 1   ; Discipline, leveling, skill tabs and
+                           ; vocation change for support pawns
     inclination_elixirs = 1 ; elixirs usable from any pawn's inventory
+    pawn_gear = 1          ; keep unequipped gear, equip restricted and
+                           ; upgraded gear, Barroch's upgrade pages
 
     [vocation]
     marker_item = 1529     ; item that picks the pawn (Neutralizing Elixir)
     consume_marker = 0     ; 1 = one is used up per vocation change
 
-    [gear]
-    keep_items = 1         ; unequipped gear stays in the inventory
-    skip_prompt = 1        ; skip the "send it away" confirmation
-    allow_equip = 1        ; support pawns can equip restricted gear
-    allow_give = 1         ; restricted items can be given to them, or
-                           ; withdrawn from storage into their inventory
-                           ; (needed for the elixirs)
-    upgrade_pages = 1      ; support pawn pages on Barroch's upgrade screen
+Giving support pawns restricted items (with [Give] or from storage) is
+on while any of pawn_progression, inclination_elixirs or pawn_gear is
+on: the elixirs and the vocation marker are restricted items.
 
 
 NOTES
@@ -196,7 +190,7 @@ NOTES
   dinput8's ignoreEquipVocation option lifts them along with every
   other vocation restriction.
 - Upgrading from pawnitems: remove pawnitems.dll from the addons line.
-  Its settings now live in realpawns.ini's [gear] section.
+  Its settings are now the pawn_gear switch in realpawns.ini.
 
 
 BUILDING

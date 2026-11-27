@@ -21,13 +21,11 @@ static char  g_dir[MAX_PATH];        /* DLL folder, trailing backslash */
 static char  g_log_mode[32] = "truncate";
 static FILE *g_log;
 static int   g_persist = 1;
-static int   g_discipline = 1;
-static int   g_skill_tabs = 1;
-static int   g_innate = 1;
-static int   g_vocation = 1;
+static int   g_progression = 1;   /* Discipline, leveling, skill tabs, vocation */
 static int   g_inclination = 1;
-static struct unequip_opts  g_unequip  = { 1, 1 };
-static struct restrict_opts g_restrict = { 1, 1, 1 };
+static int   g_pawn_gear = 1;     /* unequip, equip, upgrade pages             */
+static struct unequip_opts  g_unequip;
+static struct restrict_opts g_restrict;
 
 static void write_log(const char *msg)
 {
@@ -56,20 +54,21 @@ static void read_config(void)
     ini[sizeof ini - 1] = 0;
     GetPrivateProfileStringA("main", "logging", "truncate", g_log_mode,
                              sizeof g_log_mode, ini);
-    g_persist    = GetPrivateProfileIntA("features", "persist", 1, ini) != 0;
-    g_discipline = GetPrivateProfileIntA("features", "discipline", 1, ini) != 0;
-    rp_level_up  = GetPrivateProfileIntA("features", "leveling", 1, ini) != 0;
-    g_skill_tabs = GetPrivateProfileIntA("features", "skill_tabs", 1, ini) != 0;
-    g_innate     = GetPrivateProfileIntA("features", "innate_skills", 1, ini) != 0;
-    g_vocation   = GetPrivateProfileIntA("features", "vocation_change", 1, ini) != 0;
+    g_persist     = GetPrivateProfileIntA("features", "persist", 1, ini) != 0;
+    g_progression = GetPrivateProfileIntA("features", "pawn_progression", 1, ini) != 0;
     g_inclination = GetPrivateProfileIntA("features", "inclination_elixirs", 1, ini) != 0;
-    rp_vc_marker = GetPrivateProfileIntA("vocation", "marker_item", 1529, ini);
+    g_pawn_gear   = GetPrivateProfileIntA("features", "pawn_gear", 1, ini) != 0;
+    rp_vc_marker  = GetPrivateProfileIntA("vocation", "marker_item", 1529, ini);
     rp_vc_consume = GetPrivateProfileIntA("vocation", "consume_marker", 0, ini) != 0;
-    g_unequip.keep_items  = GetPrivateProfileIntA("gear", "keep_items", 1, ini) != 0;
-    g_unequip.skip_prompt = GetPrivateProfileIntA("gear", "skip_prompt", 1, ini) != 0;
-    g_restrict.equip      = GetPrivateProfileIntA("gear", "allow_equip", 1, ini) != 0;
-    g_restrict.give       = GetPrivateProfileIntA("gear", "allow_give", 1, ini) != 0;
-    g_restrict.upgrade_pages = GetPrivateProfileIntA("gear", "upgrade_pages", 1, ini) != 0;
+
+    rp_level_up = g_progression;
+    g_unequip.keep_items     = g_pawn_gear;
+    g_unequip.skip_prompt    = g_pawn_gear;
+    g_restrict.equip         = g_pawn_gear;
+    g_restrict.upgrade_pages = g_pawn_gear;
+    /* the vocation marker and the elixirs are restricted items: support
+     * pawns can only be handed them with the give patch */
+    g_restrict.give = g_pawn_gear || g_progression || g_inclination;
 }
 
 static void open_log(void)
@@ -84,7 +83,7 @@ static void open_log(void)
 static void on_save_written(const void *sav, int len)
 {
     /* the save just written lacks them; the next one will have them */
-    if (g_innate) innate_grant_party();
+    innate_grant_party();
     if (!g_persist) return;
     int n = store_capture_save(sav, len);
     if (n > 0) {
@@ -104,8 +103,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID reserved)
         patch_set_log(write_log);
         patch_logf("realpawns.dll " REALPAWNS_VERSION " loaded");
 
-        rp_innate_enabled = g_innate && innate_init() > 0;
-        if (!g_innate) patch_logf("innate: disabled in realpawns.ini");
+        rp_innate_enabled = innate_init() > 0;
 
         /* clones are always made; persist only decides whether the save
          * hook writes their files (read back either way) */
@@ -117,27 +115,18 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID reserved)
         patch_logf("persist: %s", g_persist ? "on" :
                    "off in realpawns.ini (clone files are read, not written)");
 
-        /* only clones level up, through the Discipline patches */
-        if (!g_discipline) rp_level_up = 0;
-        if (g_discipline)
-            patch_logf("discipline: %s, leveling %s",
-                       discipline_install() ? "ready" : "NOT installed (see above)",
-                       rp_level_up ? "on" : "off");
-        else
-            patch_logf("discipline: disabled in realpawns.ini");
-
-        if (g_skill_tabs)
-            patch_logf("skill tabs: %s", skilltabs_install() ? "ready" :
-                       "NOT installed (see above)");
-        else
-            patch_logf("skill tabs: disabled in realpawns.ini");
-
-        if (g_vocation)
-            patch_logf("vocation change: %s (marker item %d, %s)",
-                       vocation_install() ? "ready" : "NOT installed (see above)",
+        if (g_progression) {
+            /* Discipline, and XP for clones; skill tabs; vocation change */
+            int ok_d = discipline_install();
+            int ok_t = skilltabs_install();
+            int ok_v = vocation_install();
+            patch_logf("pawn progression: %s (marker item %d, %s)",
+                       ok_d && ok_t && ok_v ? "ready" :
+                       "one or more patches NOT installed (see above)",
                        rp_vc_marker, rp_vc_consume ? "used up" : "kept");
-        else
-            patch_logf("vocation change: disabled in realpawns.ini");
+        } else {
+            patch_logf("pawn progression: disabled in realpawns.ini");
+        }
 
         if (g_inclination)
             patch_logf("inclination elixirs: %s", inclination_install() ? "ready" :
@@ -145,14 +134,18 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID reserved)
         else
             patch_logf("inclination elixirs: disabled in realpawns.ini");
 
-        if (g_unequip.keep_items || g_unequip.skip_prompt ||
-            g_restrict.equip || g_restrict.give || g_restrict.upgrade_pages) {
+        if (g_pawn_gear) {
             int ok_u = unequip_install(&g_unequip);
             int ok_g = restrict_install(&g_restrict);
-            patch_logf("gear: %s", ok_u && ok_g ? "ready" :
+            patch_logf("pawn gear: %s", ok_u && ok_g ? "ready" :
                        "one or more patches NOT installed (see above)");
+        } else if (g_restrict.give) {
+            /* pawn progression / inclination elixirs still need it */
+            patch_logf("pawn gear: disabled in realpawns.ini, giving restricted "
+                       "items %s", restrict_install(&g_restrict) ? "on" :
+                       "NOT installed (see above)");
         } else {
-            patch_logf("gear: disabled in realpawns.ini");
+            patch_logf("pawn gear: disabled in realpawns.ini");
         }
     } else if (reason == DLL_PROCESS_DETACH) {
         patch_logf("realpawns.dll unloaded");

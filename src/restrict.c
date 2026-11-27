@@ -228,7 +228,7 @@ int restrict_install(const struct restrict_opts *opts)
             ok = 0;
         }
     } else {
-        patch_logf("gear/equip: disabled in realpawns.ini");
+        patch_logf("gear/equip: off");
     }
 
     if (opts->give) {
@@ -240,7 +240,7 @@ int restrict_install(const struct restrict_opts *opts)
                           WITHDRAW_PATCH_OFF,
                           k_withdraw_patch, sizeof(k_withdraw_patch));
     } else {
-        patch_logf("gear/give: disabled in realpawns.ini (give + withdraw)");
+        patch_logf("gear/give: off (give + withdraw)");
     }
 
     if (opts->upgrade_pages) {
@@ -248,7 +248,7 @@ int restrict_install(const struct restrict_opts *opts)
                           k_pages_sig, sizeof(k_pages_sig), PAGES_PATCH_OFF,
                           k_pages_patch, sizeof(k_pages_patch));
     } else {
-        patch_logf("gear/upgrade pages: disabled in realpawns.ini");
+        patch_logf("gear/upgrade pages: off");
     }
     return ok;
 }
